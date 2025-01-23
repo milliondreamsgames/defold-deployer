@@ -135,8 +135,8 @@ if $enable_incremental_version; then
 	version="${version%.*}.$commits_count"
 fi
 
-file_prefix_name="${title_no_space}_${version}"
-version_folder="${bundle_folder}/${version}"
+file_prefix_name="${title_no_space}_${version}-${commits_count}"
+version_folder="${bundle_folder}/${version}-${commits_count}"
 echo -e "\nProject: \x1B[36m${title} v${version}\x1B[0m"
 echo -e "Commit SHA: \x1B[35m${commit_sha}\x1B[0m"
 echo -e "Commits amount: \x1B[33m${commits_count}\x1B[0m"
@@ -269,6 +269,9 @@ build() {
 		source ./$pre_build_script
 	fi
 
+	#clean first
+	rm -f -r build/galaxy_bundles/*.zip ./.deployer_cache ./build
+
 	mkdir -p ${version_folder}
 
 	platform=$1
@@ -318,21 +321,25 @@ build() {
 	fi
 
 	filename="${file_prefix_name}_${mode}"
-	target_path=false
+
+	platform_folder="${version_folder}/${platform}"
+
+	rm -rf ${platform_folder}
+	mkdir $platform_folder
 
 	# Android platform
 	if [ ${platform} == ${android_platform} ]; then
-		line="${dist_folder}/${title}/${title}"
+		line="${dist_folder}/Galaxy/Galaxy"
 
 		if $is_fast_debug; then
 			echo "Build only one platform for faster build"
 			additional_params=" -ar armv7-android $additional_params"
 		fi
 
-		if $is_live_content; then
-			echo "Add publishing live content to build"
-			additional_params=" -l yes $additional_params"
-		fi
+		#if $is_live_content; then
+		#	echo "Add publishing live content to build"
+		#	additional_params=" -l yes $additional_params"
+		#fi
 
 		if [ ! -z "$android_keystore_alias" ]; then
 			additional_params=" --keystore-alias $android_keystore_alias $additional_params"
@@ -350,13 +357,13 @@ build() {
 			--keystore-pass ${android_keystore_password} \
 			--build-server ${build_server} ${additional_params}
 
-		target_path="${version_folder}/${filename}.apk"
+		target_path="${platform_folder}/${filename}.apk"
 		mv "${line}.apk" ${target_path} && is_build_success=true
 
+		rm -f "${platform_folder}/${filename}.aab"
+		mv "${line}.aab" "${platform_folder}/${filename}.aab" && is_build_success=true
 		export DEPLOYER_ARTIFACT_PATH="${target_path}"
 
-		target_path="${version_folder}/${filename}.aab"
-		mv "${line}.aab" ${target_path} && is_build_success=true
 	fi
 
 	# iOS platform
@@ -367,6 +374,11 @@ build() {
 			additional_params=" -brhtml ${version_folder}/${filename}_ios_report.html $additional_params"
 		fi
 
+		#if $is_live_content; then
+		#	echo "Add publishing live content to build"
+		#	additional_params=" -l yes $additional_params"
+		#fi
+
 		if [ ! -z "$settings_ios" ]; then
 			additional_params="$additional_params --settings $settings_ios"
 		fi
@@ -374,13 +386,19 @@ build() {
 		bob ${mode} --platform ${platform} --architectures arm64-ios --identity ${ident} --mobileprovisioning ${prov} \
 			--build-server ${build_server} ${additional_params}
 
-		target_path="${version_folder}/${filename}.ipa"
-
-		rm -rf "${version_folder}/${filename}.app"
-		mv "${line}.app" "${version_folder}/${filename}.app"
+		target_path="${platform_folder}/${filename}.ipa"
+		rm -rf ${target_path}
 		mv "${line}.ipa" ${target_path} && is_build_success=true
 
+		rm -rf "${platform_folder}/${filename}.app"
+		mv "${line}.app" "${platform_folder}/${filename}.app"
+
 		export DEPLOYER_ARTIFACT_PATH="${target_path}"
+
+		# Upload to Transporter if this is a release build
+		if [ ${mode} == "release" ]; then
+			upload_to_transporter "${target_path}"
+		fi
 	fi
 
 	# HTML5 platform
@@ -398,14 +416,14 @@ build() {
 		echo "Start build HTML5 ${mode}"
 		bob ${mode} --platform ${platform} --architectures js-web ${additional_params}
 
-		target_path="${version_folder}/${filename}_html.zip"
+		target_path="${platform_folder}/${filename}_html.zip"
 
-		rm -rf "${version_folder}/${filename}_html"
+		rm -rf "${platform_folder}/${filename}_html"
 		rm -f "${target_path}"
-		mv "${line}" "${version_folder}/${filename}_html"
+		mv "${line}" "${platform_folder}/${filename}_html"
 
 		previous_folder=`pwd`
-		cd "${version_folder}"
+		cd "${platform_folder}"
 		zip "${filename}_html.zip" -r "${filename}_html" && is_build_success=true
 		cd "${previous_folder}"
 
@@ -427,7 +445,7 @@ build() {
 		echo "Start build Linux ${mode}"
 		bob ${mode} --platform ${platform} ${additional_params}
 
-		target_path="${version_folder}/${filename}_linux"
+		target_path="${platform_folder}/${filename}_linux"
 
 		rm -rf ${target_path}
 		mv "${line}" ${target_path} && is_build_success=true
@@ -450,7 +468,7 @@ build() {
 		echo "Start build MacOS ${mode}"
 		bob ${mode} --platform ${platform} ${additional_params}
 
-		target_path="${version_folder}/${filename}_macos.app"
+		target_path="${platform_folder}/${title}.app"
 
 		rm -rf ${target_path}
 		mv "${line}" ${target_path} && is_build_success=true
@@ -473,7 +491,7 @@ build() {
 		echo "Start build Windows ${mode}"
 		bob ${mode} --platform ${platform} ${additional_params}
 
-		target_path="${version_folder}/${filename}_windows"
+		target_path="${platform_folder}/${filename}_windows"
 
 		rm -rf ${target_path}
 		mv "${line}" ${target_path} && is_build_success=true
@@ -486,6 +504,12 @@ build() {
 		if [ -f ./${post_build_script} ]; then
 			echo "Run post-build script: $post_build_script"
 			source ./$post_build_script
+		fi
+
+		mkdir "${platform_folder}/liveupdate_content"
+
+		if [ -n "$(find build/galaxy_bundles/ -maxdepth 1 -name '*.zip' -print -quit)" ]; then
+			mv build/galaxy_bundles/*.zip "${platform_folder}/liveupdate_content/resources_${version}_${commits_count}.zip"
 		fi
 
 		write_report ${platform} ${mode} ${target_path}
@@ -515,26 +539,34 @@ deploy() {
 	mode=$2
 	clean_build_settings
 
+	platform_folder="${version_folder}/${platform}"
+
 	if [ ${platform} == ${android_platform} ]; then
-		filename="${version_folder}/${file_prefix_name}_${mode}.apk"
+		filename="${platform_folder}/${file_prefix_name}_${mode}.apk"
 		echo "Deploy to Android from ${filename}"
 		adb install -r -d "${filename}"
 	fi
 
 	if [ ${platform} == ${ios_platform} ]; then
-		filename="${version_folder}/${file_prefix_name}_${mode}.ipa"
+		filename="${platform_folder}/${file_prefix_name}_${mode}.ipa"
 		echo "Deploy to iOS from ${filename}"
-		echo "Deploy command: ios-deploy --bundle ${filename} --bundle_id ${bundle_id}"
-		ios-deploy --bundle "${filename}" --bundle_id "${bundle_id}"
+		echo "Deploy command: ios-deploy -W --bundle ${filename} --bundle_id ${bundle_id}"
+		ios-deploy -W --bundle "${filename}" --bundle_id "${bundle_id}"
 	fi
 
 	if [ ${platform} == ${html_platform} ]; then
-		filename="${version_folder}/${file_prefix_name}_${mode}_html/"
+		filename="${platform_folder}/${file_prefix_name}_${mode}_html/"
 		echo "Start python server and open in browser ${filename:1}"
 
 		open "http://localhost:8000${filename:1}"
 		python3 --version
 		python3 -m "http.server"
+	fi
+
+	if [${platform} == ${macos_platform}]; then
+		filename="${platform_folder}/${file_prefix_name}_${mode}_macos.app"
+		echo "Deploy to MacOS from ${filename}"
+		open $filename
 	fi
 }
 
@@ -544,32 +576,38 @@ run() {
 	mode=$2
 	clean_build_settings
 
+	platform_folder="${version_folder}/${platform}"
+
 	if [ ${platform} == ${android_platform} ]; then
 		adb shell am start -n ${bundle_id}/com.dynamo.android.DefoldActivity
 		adb logcat -s defold
 	fi
 
 	if [ ${platform} == ${ios_platform} ]; then
-		filename_app="${version_folder}/${file_prefix_name}_${mode}.app"
+		filename_app="${platform_folder}/${file_prefix_name}_${mode}.app"
 		ios-deploy -I -m -b ${filename_app} | grep ${title_no_space}
 	fi
 
 	if [ ${platform} == ${linux_platform} ]; then
-		filename="${version_folder}/${file_prefix_name}_${mode}_linux/${title_no_space}.x86_64"
+		filename="${platform_folder}/${file_prefix_name}_${mode}_linux/${title_no_space}.x86_64"
 
 		echo "Start Linux build: $filename"
 		./$filename
 	fi
 
 	if [ ${platform} == ${macos_platform} ]; then
-		filename="${version_folder}/${file_prefix_name}_${mode}_macos.app"
+		filename="${platform_folder}/${file_prefix_name}_${mode}_macos.app"
+
+		if [ ${mode} == "debug" ]; then
+			filename="${platform_folder}/Galaxy!.app/Contents/MacOS/Galaxy"
+		fi
 
 		echo "Start MacOS build: $filename"
-		open $filename
+		open $filename ; exit;
 	fi
 
 	if [ ${platform} == ${windows_platform} ]; then
-		filename="${version_folder}/${file_prefix_name}_${mode}_windows/${title_no_space}.exe"
+		filename="${platform_folder}/${file_prefix_name}_${mode}_windows/${title_no_space}.exe"
 
 		echo "Start Windows build: $filename"
 		./$filename
@@ -596,6 +634,26 @@ clean() {
 	else
 		echo -e "Deployer end"
 	fi
+}
+
+
+upload_to_transporter() {
+    local file_path=$1
+    if [ -z "$transporter_username" ] || [ -z "$transporter_password" ] || [ -z "$transporter_team_id" ]; then
+        echo -e "\x1B[33mSkipping Transporter upload: credentials not configured\x1B[0m"
+        echo "Required settings in settings_deployer:"
+        echo "  transporter_username (Apple ID)"
+        echo "  transporter_password (App-specific password)"
+        echo "  transporter_team_id (Team ID from App Store Connect)"
+        return 0
+    fi
+
+    echo "Uploading to App Store Connect: ${file_path}"
+    xcrun notarytool submit "${file_path}" \
+        --apple-id "${transporter_username}" \
+        --password "${transporter_password}" \
+        --team-id "${transporter_team_id}" \
+        --wait
 }
 
 
@@ -697,7 +755,9 @@ build_date = ${build_date}" > ${version_settings_filename}
 
 if $enable_incremental_android_version_code; then
 	echo "
-
+[ios]
+bundle_version = ${commits_count}" >> ${version_settings_filename}
+	echo "
 [android]
 version_code = ${commits_count}" >> ${version_settings_filename}
 fi
