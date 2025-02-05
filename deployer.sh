@@ -43,6 +43,26 @@
 ## MIT License
 ###
 
+clean() {
+	clean_build_settings
+
+	if $is_build_started; then
+		if $is_build_success; then
+			echo -e "\x1B[32m[SUCCESS]: Build succesfully created\x1B[0m"
+			echo -e "\x1B[32m[SUCCESS]: Build time: ${build_time} seconds\x1B[0m"
+			echo -e "\x1B[32m[SUCCESS]: Build artifact: ${DEPLOYER_ARTIFACT_PATH}\x1B[0m"
+		else
+			echo -e "\x1B[31m[ERROR]: Build finished with errors\x1B[0m"
+		fi
+	else
+		echo -e "Deployer end"
+	fi
+}
+
+clean_build_settings() {
+	rm -f ${version_settings_filename}
+}
+
 ### Exit on Cmd+C / Ctrl+C
 trap "exit" INT
 trap clean EXIT
@@ -159,6 +179,9 @@ echo -e "Using Bob version \x1B[35m${bob_version}\x1B[0m SHA: \x1B[35m${bob_sha}
 bob_path="${bob_folder}bob${bob_version}.jar"
 download_bob() {
 	if [ ! -f ${bob_path} ]; then
+		# Create the bob folder if it doesn't exist
+		mkdir -p "${bob_folder}"
+		
 		BOB_URL="https://d.defold.com/archive/${bob_channel}/${bob_sha}/bob/bob.jar"
 		echo "Unable to find bob${bob_version}.jar. Downloading it from d.defold.com: ${BOB_URL}}"
 		echo "curl -L -o ${bob_path} ${BOB_URL}"
@@ -617,23 +640,6 @@ run() {
 
 clean_build_settings() {
 	rm -f ${version_settings_filename}
-}
-
-
-clean() {
-	clean_build_settings
-
-	if $is_build_started; then
-		if $is_build_success; then
-			echo -e "\x1B[32m[SUCCESS]: Build succesfully created\x1B[0m"
-			echo -e "\x1B[32m[SUCCESS]: Build time: ${build_time} seconds\x1B[0m"
-			echo -e "\x1B[32m[SUCCESS]: Build artifact: ${DEPLOYER_ARTIFACT_PATH}\x1B[0m"
-		else
-			echo -e "\x1B[31m[ERROR]: Build finished with errors\x1B[0m"
-		fi
-	else
-		echo -e "Deployer end"
-	fi
 }
 
 
