@@ -359,10 +359,10 @@ build() {
 			additional_params=" -ar armv7-android $additional_params"
 		fi
 
-		#if $is_live_content; then
-		#	echo "Add publishing live content to build"
-		#	additional_params=" -l yes $additional_params"
-		#fi
+		if $is_live_content; then
+			echo "Add publishing live content to build"
+			additional_params=" -l yes $additional_params"
+		fi
 
 		if [ ! -z "$android_keystore_alias" ]; then
 			additional_params=" --keystore-alias $android_keystore_alias $additional_params"
@@ -397,10 +397,10 @@ build() {
 			additional_params=" -brhtml ${version_folder}/${filename}_ios_report.html $additional_params"
 		fi
 
-		#if $is_live_content; then
-		#	echo "Add publishing live content to build"
-		#	additional_params=" -l yes $additional_params"
-		#fi
+		if $is_live_content; then
+			echo "Add publishing live content to build"
+			additional_params=" -l yes $additional_params"
+		fi
 
 		if [ ! -z "$settings_ios" ]; then
 			additional_params="$additional_params --settings $settings_ios"
