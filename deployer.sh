@@ -10,7 +10,7 @@
 ## See full instructions here: https://github.com/Insality/defold-deployer/blob/master/README.md
 ##
 ## Usage:
-## bash deployer.sh [a][i][h][w][l][m][r][b][d] [--fast] [--no-resolve] [--instant] [--settings {filename}] [--headless] [--param {x}]
+## bash deployer.sh [a][i][h][w][l][m][r][b][d] [--fast] [--no-resolve] [--instant] [--settings {filename}] [--headless] [--param {x}] [--steam]
 ## 	a - add target platform Android
 ## 	i - add target platform iOS
 ## 	h - add target platform HTML5
@@ -27,6 +27,7 @@
 ## 	--settings {filename} - add settings file to build params. Can be used several times
 ## 	--param {x} - add flag {x} to bob.jar. Can be used several times
 ## 	--instant - it preparing bundle for Android Instant Apps. Always in release mode
+##  --steam - upload release builds to Steam using SteamCMD (only works with release mode)
 ##
 ## 	Example:
 ## 	./deployer.sh abd - build, deploy and run Android bundle
@@ -36,9 +37,7 @@
 ## 	./deployer.sh lbd --settings unit_test.txt --headless Build linux headless build with unit_test.txt settings and run it
 ## 	./deployer.sh wbr - build Windows release build
 ## 	./deployer.sh ab --instant - build Android release build for Android Instant Apps
-##
-## 	You can pass params in any order you want, for example:
-## 	./deployer.sh riba - same behaviour as aibr
+##  ./deployer.sh wbr --steam - build Windows release build and upload it to Steam
 ##
 ## MIT License
 ###
@@ -85,6 +84,11 @@ no_strip_executable=false
 is_build_html_report=false
 enable_incremental_version=false
 enable_incremental_android_version_code=false
+is_steam_upload=false
+steam_app_id=""
+steam_depot_id=""
+steam_username=""
+steam_vdf_path=""
 
 ### Settings loading
 settings_filename="settings_deployer"
@@ -262,8 +266,8 @@ bob() {
 	fi
 
 	if [ ${mode} == "debug" ]; then
-		echo -e "\nBuild without distclean and compression. Debug mode"
-		args+=" build bundle"
+		echo -e "\nBuild without distclean. Compression enabled, Debug mode"
+		args+=" --texture-compression true build bundle"
 	fi
 
 	if [ ${mode} == "release" ]; then
@@ -387,6 +391,9 @@ build() {
 		mv "${line}.aab" "${platform_folder}/${filename}.aab" && is_build_success=true
 		export DEPLOYER_ARTIFACT_PATH="${target_path}"
 
+		#if [ ${mode} == "release" ]; then
+			# TODO: upload to Play Store
+		#fi
 	fi
 
 	# iOS platform
@@ -461,6 +468,11 @@ build() {
 			additional_params=" -brhtml ${version_folder}/${filename}_linux_report.html $additional_params"
 		fi
 
+		#if $is_live_content; then
+		#	echo "Add publishing live content to build"
+		#	additional_params=" -l yes $additional_params"
+		#fi
+
 		if [ ! -z "$settings_linux" ]; then
 			additional_params="$additional_params --settings $settings_linux"
 		fi
@@ -474,6 +486,12 @@ build() {
 		mv "${line}" ${target_path} && is_build_success=true
 
 		export DEPLOYER_ARTIFACT_PATH="${target_path}"
+
+		if [ ${mode} == "release" ]; then
+		if $is_steam_upload; then
+				upload_to_steam ${platform} ${mode} ${target_path}
+			fi
+		fi
 	fi
 
 	# MacOS platform
@@ -483,6 +501,11 @@ build() {
 		if $is_build_html_report; then
 			additional_params=" -brhtml ${version_folder}/${filename}_macos_report.html $additional_params"
 		fi
+
+		#if $is_live_content; then
+			#echo "Add publishing live content to build"
+			#additional_params=" -l yes $additional_params"
+		#fi
 
 		if [ ! -z "$settings_macos" ]; then
 			additional_params="$additional_params --settings $settings_macos"
@@ -497,6 +520,13 @@ build() {
 		mv "${line}" ${target_path} && is_build_success=true
 
 		export DEPLOYER_ARTIFACT_PATH="${target_path}"
+
+		if [ ${mode} == "release" ]; then
+			
+			if $is_steam_upload; then
+				upload_to_steam ${platform} ${mode} ${target_path}
+			fi
+		fi
 	fi
 
 	# Windows platform
@@ -507,6 +537,11 @@ build() {
 			additional_params=" -brhtml ${version_folder}/${filename}_windows_report.html $additional_params"
 		fi
 
+		#if $is_live_content; then
+			#echo "Add publishing live content to build"
+			#additional_params=" -l yes $additional_params"
+		#fi
+		
 		if [ ! -z "$settings_windows" ]; then
 			additional_params="$additional_params --settings $settings_windows"
 		fi
@@ -520,6 +555,12 @@ build() {
 		mv "${line}" ${target_path} && is_build_success=true
 
 		export DEPLOYER_ARTIFACT_PATH="${target_path}"
+
+		if [ ${mode} == "release" ]; then
+			if $is_steam_upload; then
+				upload_to_steam ${platform} ${mode} ${target_path}
+			fi
+		fi
 	fi
 
 	if $is_build_success; then
@@ -532,7 +573,7 @@ build() {
 		mkdir "${platform_folder}/liveupdate_content"
 
 		if [ -n "$(find build/galaxy_bundles/ -maxdepth 1 -name '*.zip' -print -quit)" ]; then
-			mv build/galaxy_bundles/*.zip "${platform_folder}/liveupdate_content/resources_${version}_${commits_count}.zip"
+			mv build/galaxy_bundles/*.zip "${platform_folder}/liveupdate_content/resources_${version}.zip"
 		fi
 
 		write_report ${platform} ${mode} ${target_path}
@@ -663,6 +704,107 @@ upload_to_transporter() {
 }
 
 
+upload_to_steam() {
+    local platform=$1
+    local mode=$2
+    local target_path=$3
+
+    # Only upload release builds to Steam
+    if [ "${mode}" != "release" ]; then
+        echo -e "\x1B[33mSkipping Steam upload: only release builds can be uploaded to Steam\x1B[0m"
+        return 0
+    fi
+
+    if [ -z "$steam_app_id" ] || [ -z "$steam_depot_id" ] || [ -z "$steam_username" ]; then
+        echo -e "\x1B[33mSkipping Steam upload: credentials not configured\x1B[0m"
+        echo "Required settings in settings_deployer:"
+        echo "  steam_app_id"
+        echo "  steam_depot_id"
+        echo "  steam_username"
+        return 0
+    fi
+
+    # If no VDF path is provided, create a basic one
+    local vdf_path="${steam_vdf_path}"
+    if [ -z "$vdf_path" ]; then
+        local vdf_dir="${script_path}/steam_vdf"
+        mkdir -p "$vdf_dir"
+        
+        # Create app build VDF
+        local app_vdf="${vdf_dir}/app_${steam_app_id}.vdf"
+        echo "Creating basic Steam app VDF at ${app_vdf}"
+        echo "\"appbuild\"
+{
+    \"appid\" \"${steam_app_id}\"
+    \"desc\" \"${title} ${version} ${mode} build\"
+    \"buildoutput\" \"${PWD}/steam_build_output/\"
+    \"contentroot\" \"${version_folder}\"
+    \"setlive\" \"\"
+    \"preview\" \"1\"
+    \"local\" \"\"
+    \"depots\"
+    {
+        \"${steam_depot_id}\" \"${vdf_dir}/depot_${steam_depot_id}.vdf\"
+    }
+}" > "$app_vdf"
+
+        # Create depot build VDF
+        local depot_vdf="${vdf_dir}/depot_${steam_depot_id}.vdf"
+        echo "Creating basic Steam depot VDF at ${depot_vdf}"
+        echo "\"DepotBuildConfig\"
+{
+    \"DepotID\" \"${steam_depot_id}\"
+    \"ContentRoot\" \"${version_folder}/${platform}\"
+    \"FileMapping\"
+    {
+        \"LocalPath\" \"*\"
+        \"DepotPath\" \".\"
+        \"recursive\" \"1\"
+    }
+    \"FileExclusion\" \"*.pdb\"
+}" > "$depot_vdf"
+
+        vdf_path="$app_vdf"
+    fi
+
+    echo -e "\x1B[36mUploading to Steam: ${target_path}\x1B[0m"
+    echo -e "App ID: \x1B[33m${steam_app_id}\x1B[0m"
+    echo -e "Depot ID: \x1B[33m${steam_depot_id}\x1B[0m"
+    echo -e "VDF Path: \x1B[33m${vdf_path}\x1B[0m"
+    
+    # Determine which steamcmd to use based on OS
+    local steamcmd_path="steamcmd"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        if [ -f "/usr/local/bin/steamcmd" ]; then
+            steamcmd_path="/usr/local/bin/steamcmd"
+        elif [ -d "${HOME}/steamcmd" ]; then
+            steamcmd_path="${HOME}/steamcmd/steamcmd.sh"
+        fi
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        # Linux
+        if [ -f "/usr/games/steamcmd" ]; then
+            steamcmd_path="/usr/games/steamcmd"
+        elif [ -d "${HOME}/steamcmd" ]; then
+            steamcmd_path="${HOME}/steamcmd/steamcmd.sh"
+        fi
+    elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+        # Windows with Git Bash or similar
+        if [ -f "C:/steamcmd/steamcmd.exe" ]; then
+            steamcmd_path="C:/steamcmd/steamcmd.exe"
+        fi
+    fi
+    
+    echo -e "Using SteamCMD: \x1B[33m${steamcmd_path}\x1B[0m"
+    
+    # Run SteamCMD to upload the build
+    "$steamcmd_path" +login "${steam_username}" +run_app_build "${vdf_path}" +quit
+    
+    echo -e "\x1B[32mSteam upload process completed\x1B[0m"
+    echo -e "\x1B[32mCheck your Steam Partner dashboard to verify the upload\x1B[0m"
+}
+
+
 ### ARGS PARSING
 arg=$1
 is_build=false
@@ -746,6 +888,10 @@ do
 			mode="headless"
 			shift
 		;;
+		--steam)
+			is_steam_upload=true
+			shift
+		;;
 		*) # Unknown option
 			shift
 		;;
@@ -773,6 +919,11 @@ add_to_gitignore $version_settings_filename
 
 
 ### Deployer run
+if $is_steam_upload && [ "${mode}" != "release" ]; then
+    echo -e "\x1B[33mWarning: Steam upload is enabled but will only work with release builds\x1B[0m"
+    echo -e "\x1B[33mAdd 'r' to your command to enable release mode\x1B[0m"
+fi
+
 if $is_ios; then
 	if $is_build; then
 		echo -e "\nStart build on \x1B[36m${ios_platform}\x1B[0m"

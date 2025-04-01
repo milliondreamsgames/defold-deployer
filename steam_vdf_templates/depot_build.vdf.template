@@ -1,0 +1,12 @@
+"DepotBuildConfig"
+{
+    "DepotID" "YOUR_DEPOT_ID"
+    "ContentRoot" "PATH_TO_CONTENT_ROOT"
+    "FileMapping"
+    {
+        "LocalPath" "*"
+        "DepotPath" "."
+        "recursive" "1"
+    }
+    "FileExclusion" "*.pdb"
+}

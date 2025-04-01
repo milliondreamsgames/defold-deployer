@@ -88,6 +88,19 @@ android_key_dist={path_to_key.pk8}
 # Path to android signature certificate for release (Since Defold 174 only using for Android Instant games)
 android_cer_dist={path_to_certificate.pem}
 
+# Steam settings for uploading builds to Steam
+# Your Steam application ID
+steam_app_id=""
+
+# Your Steam depot ID
+steam_depot_id=""
+
+# Your Steam username (account with access to the app)
+steam_username=""
+
+# Path to the Steam VDF configuration file
+steam_vdf_path=""
+
 # Use settings file for Android platform
 # settings_android={path_to_android_ini}
 

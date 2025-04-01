@@ -23,6 +23,7 @@ Universal build && deploy script for *Defold* projects (Android, iOS, HTML5, Lin
 - [Optional] Local build cache and separate build folder to prevent cache reset
 - [Optional] Use incremental value for last number in version and android.version_code (enable via _enable incremental version_, _enable_incremental_android_version_code_)
 - [Optional] Pre and post build hooks
+- [Optional] Upload builds to Steam using SteamCMD
 
 ## Install
 For bob build tool you need to install java JDK: https://openjdk.java.net/projects/jdk/11/
@@ -44,6 +45,8 @@ For building Android Instant you need to make prepare:
 - *Insctructions*: [https://forum.defold.com/t/instruction-android-instant-app-creation/48471](https://forum.defold.com/t/instruction-android-instant-app-creation/48471)
  - Deployer use `zip` command to prepare bundle for _Google Play_
 
+For uploading builds to Steam you need to install:
+- *SteamCMD*: https://developer.valvesoftware.com/wiki/SteamCMD
 
 ## Setup
 Run `deployer.sh` inside your `game.project` folder.
@@ -66,7 +69,7 @@ Call it in your project folder like: `deployer abd`
 
 
 ## Usage
-`bash deployer.sh [a][i][h][w][l][m][r][b][d] [--fast] [--resolve] [--instant] [--settings {filename}] [--headless]`
+`bash deployer.sh [a][i][h][w][l][m][r][b][d] [--fast] [--resolve] [--instant] [--steam] [--settings {filename}] [--headless]`
 - `a` - add target platform Android
 - `i` - add target platform iOS
 - `h` - add target platform HTML5
@@ -81,6 +84,7 @@ Call it in your project folder like: `deployer abd`
 - `--headless` - set mode to headless. Override release mode
 - `--resolve` - build with dependency resolve
 - `--instant` - it preparing bundle for Android Instant Apps. Always in release mode
+- `--steam` - upload release builds to Steam using SteamCMD (only works with release mode)
 
 Bundle files will be located at *./dist/bundle/{Version}/*
 
@@ -209,6 +213,20 @@ android_key_dist={path_to_key.pk8}
 
 # Path to android signature certificate for release (Since Defold 174 only using for Android Instant games)
 android_cer_dist={path_to_certificate.pem}
+
+# Steam settings for uploading builds to Steam
+# Your Steam application ID
+steam_app_id=""
+
+# Your Steam depot ID
+steam_depot_id=""
+
+# Your Steam username (account with access to the app)
+steam_username=""
+
+# Path to the Steam VDF configuration file (optional)
+# If not provided, basic VDF files will be created automatically
+steam_vdf_path=""
 ```
 
 ## Author
@@ -219,4 +237,3 @@ Maxim Tuprikov, [Insality](http://github.com/Insality)
 ## Issues and suggestions
 
 If you have any issues, questions or suggestions please  [create an issue](https://github.com/Insality/druid/issues)  or contact me:  [insality@gmail.com](mailto:insality@gmail.com)
-

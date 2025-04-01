@@ -1,0 +1,14 @@
+"appbuild"
+{
+    "appid" "YOUR_APP_ID"
+    "desc" "YOUR_GAME_NAME build"
+    "buildoutput" "PATH_TO_BUILD_OUTPUT_FOLDER"
+    "contentroot" "PATH_TO_CONTENT_ROOT"
+    "setlive" ""
+    "preview" "1"
+    "local" ""
+    "depots"
+    {
+        "YOUR_DEPOT_ID" "PATH_TO_DEPOT_VDF"
+    }
+}
