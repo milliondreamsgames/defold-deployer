@@ -614,11 +614,27 @@ deploy() {
 	fi
 
 	if [ ${platform} == ${ios_platform} ]; then
-		filename="${platform_folder}/${file_prefix_name}_${mode}.ipa"
+		# For iOS debug deployment, we use `xcrun devicectl device install`, which works with .app files
+		filename="${platform_folder}/${file_prefix_name}_${mode}.app"
 		echo "Deploy to iOS from ${filename}"
 		bundle_id="com.MillionDreams.Galaxy" #hardcoded for now.
-		echo "Deploy command: ios-deploy -W --bundle ${filename} --bundle_id ${bundle_id}"
-		ios-deploy -W --bundle "${filename}" --bundle_id "${bundle_id}"
+
+		# Get device identifier
+		device_id=$(get_ios_device_id)
+		if [ -z "$device_id" ]; then
+			echo -e "\x1B[31m[ERROR]: No iOS device found\x1B[0m"
+			return 1
+		fi
+
+		echo "Installing app to device ${device_id}..."
+		echo "Install command: xcrun devicectl device install app --device ${device_id} \"${filename}\""
+		xcrun devicectl device install app --device ${device_id} "${filename}"
+
+		if [ $? -ne 0 ]; then
+			echo -e "\x1B[33m[WARNING]: devicectl install failed, trying ios-deploy as fallback...\x1B[0m"
+			echo "Fallback command: ios-deploy -W --bundle ${filename} --bundle_id ${bundle_id}"
+			ios-deploy -W --bundle "${filename}" --bundle_id "${bundle_id}"
+		fi
 	fi
 
 	if [ ${platform} == ${html_platform} ]; then
@@ -657,8 +673,31 @@ run() {
 	fi
 
 	if [ ${platform} == ${ios_platform} ]; then
+		# with devicectl, we need to use the .app file
 		filename_app="${platform_folder}/${file_prefix_name}_${mode}.app"
-		ios-deploy -I -m -b ${filename_app} #| grep ${title_no_space}
+		# Unlike android debug builds, we don't need to add .debug to bundle_id
+		# Also, the bundle_id ends in "Galaxy" instead of "OnceUponAGalaxy" for iOS because
+		# we had to change it when migrating from my personal App Store Connect account
+		bundle_id="com.MillionDreams.Galaxy" #hardcoded for now.
+
+		# Get device identifier
+		device_id=$(get_ios_device_id)
+		if [ -z "$device_id" ]; then
+			echo -e "\x1B[31m[ERROR]: No iOS device found\x1B[0m"
+			return 1
+		fi
+
+		echo "Launching app on device ${device_id}..."
+
+		echo "Using console mode..."
+		launch_ios_app_with_console "$device_id" "$bundle_id"
+		launch_status=$?
+
+		if [ $launch_status -ne 0 ]; then
+			echo -e "\x1B[33m[WARNING]: devicectl console launch failed, trying ios-deploy as fallback...\x1B[0m"
+			echo "Fallback command: ios-deploy -I -m -b ${filename_app}"
+			ios-deploy -I -m -b ${filename_app}
+		fi
 	fi
 
 	if [ ${platform} == ${linux_platform} ]; then
@@ -692,6 +731,54 @@ clean_build_settings() {
 	rm -f ${version_settings_filename}
 }
 
+
+get_ios_device_id() {
+	# Try to get the device ID using devicectl
+	local device_list=$(xcrun devicectl list devices 2>/dev/null)
+	if [ $? -eq 0 ] && [ -n "$device_list" ]; then
+		# assume the first device in the list is the one we want
+		local device_id=$(echo "$device_list" | grep -o "[0-9A-Fa-f]\{8\}-[0-9A-Fa-f]\{4\}-[0-9A-Fa-f]\{4\}-[0-9A-Fa-f]\{4\}-[0-9A-Fa-f]\{12\}" | head -1)
+
+		if [ -n "$device_id" ]; then
+			echo "$device_id"
+			return 0
+		fi
+	fi
+
+	# If we get here, no device was found
+	echo "No iOS device ID could be found" >&2
+	return 1
+}
+
+
+list_ios_devices() {
+	echo "Listing all connected iOS devices:"
+
+	# Try devicectl first
+	echo "Using devicectl:"
+	xcrun devicectl list devices 2>/dev/null || echo "devicectl command failed"
+
+	# Also try ios-deploy
+	echo "\nUsing ios-deploy:"
+	ios-deploy -c 2>/dev/null
+
+	echo "\nEnd of device list"
+}
+
+
+launch_ios_app_with_console() {
+	local device_id=$1
+	local bundle_id=$2
+
+	# Launch the app with console output
+	echo "Launching app with console output..."
+	echo "Command: xcrun devicectl device process launch --console --device ${device_id} ${bundle_id}"
+
+	# This will block and show console output until the app is terminated
+	xcrun devicectl device process launch --console --device ${device_id} ${bundle_id}
+
+	return $?
+}
 
 upload_to_transporter() {
     local file_path=$1
