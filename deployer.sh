@@ -751,21 +751,6 @@ get_ios_device_id() {
 }
 
 
-list_ios_devices() {
-	echo "Listing all connected iOS devices:"
-
-	# Try devicectl first
-	echo "Using devicectl:"
-	xcrun devicectl list devices 2>/dev/null || echo "devicectl command failed"
-
-	# Also try ios-deploy
-	echo "\nUsing ios-deploy:"
-	ios-deploy -c 2>/dev/null
-
-	echo "\nEnd of device list"
-}
-
-
 launch_ios_app_with_console() {
 	local device_id=$1
 	local bundle_id=$2
@@ -780,6 +765,7 @@ launch_ios_app_with_console() {
 	return $?
 }
 
+# TODO: finish implementing and testing this.
 upload_to_transporter() {
     local file_path=$1
     if [ -z "$transporter_username" ] || [ -z "$transporter_password" ] || [ -z "$transporter_team_id" ]; then
@@ -799,7 +785,7 @@ upload_to_transporter() {
         --wait
 }
 
-
+# TODO: finish implementing and testing this.
 upload_to_steam() {
     local platform=$1
     local mode=$2
