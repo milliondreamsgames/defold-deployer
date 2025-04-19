@@ -21,6 +21,7 @@
 ## 	b - build project (game bundle will be in ./dist folder)
 ## 	d - deploy bundle to connected device
 ## 		it will deploy && run bundle on Android/iOS with reading logs to terminal
+## 		for Android debug builds, it automatically handles the .debug suffix in package name
 ## 	--fast - only one Android platform, without resolve (for faster builds)
 ## 	--no-resolve - build without dependency resolve
 ## 	--headless - set mode to headless. Override release mode
@@ -185,7 +186,7 @@ download_bob() {
 	if [ ! -f ${bob_path} ]; then
 		# Create the bob folder if it doesn't exist
 		mkdir -p "${bob_folder}"
-		
+
 		BOB_URL="https://d.defold.com/archive/${bob_channel}/${bob_sha}/bob/bob.jar"
 		echo "Unable to find bob${bob_version}.jar. Downloading it from d.defold.com: ${BOB_URL}}"
 		echo "curl -L -o ${bob_path} ${BOB_URL}"
@@ -522,7 +523,7 @@ build() {
 		export DEPLOYER_ARTIFACT_PATH="${target_path}"
 
 		if [ ${mode} == "release" ]; then
-			
+
 			if $is_steam_upload; then
 				upload_to_steam ${platform} ${mode} ${target_path}
 			fi
@@ -541,7 +542,7 @@ build() {
 			#echo "Add publishing live content to build"
 			#additional_params=" -l yes $additional_params"
 		#fi
-		
+
 		if [ ! -z "$settings_windows" ]; then
 			additional_params="$additional_params --settings $settings_windows"
 		fi
@@ -573,7 +574,8 @@ build() {
 		mkdir "${platform_folder}/liveupdate_content"
 
 		if [ -n "$(find build/galaxy_bundles/ -maxdepth 1 -name '*.zip' -print -quit)" ]; then
-			mv build/galaxy_bundles/*.zip "${platform_folder}/liveupdate_content/resources_${version}.zip"
+			# TODO: remove commits_count from this filename after client is updated
+			mv build/galaxy_bundles/*.zip "${platform_folder}/liveupdate_content/resources_${version}_${commits_count}.zip"
 		fi
 
 		write_report ${platform} ${mode} ${target_path}
@@ -614,6 +616,7 @@ deploy() {
 	if [ ${platform} == ${ios_platform} ]; then
 		filename="${platform_folder}/${file_prefix_name}_${mode}.ipa"
 		echo "Deploy to iOS from ${filename}"
+		bundle_id="com.MillionDreams.Galaxy" #hardcoded for now.
 		echo "Deploy command: ios-deploy -W --bundle ${filename} --bundle_id ${bundle_id}"
 		ios-deploy -W --bundle "${filename}" --bundle_id "${bundle_id}"
 	fi
@@ -627,7 +630,7 @@ deploy() {
 		python3 -m "http.server"
 	fi
 
-	if [${platform} == ${macos_platform}]; then
+	if [ ${platform} == ${macos_platform} ]; then
 		filename="${platform_folder}/${file_prefix_name}_${mode}_macos.app"
 		echo "Deploy to MacOS from ${filename}"
 		open $filename
@@ -643,13 +646,19 @@ run() {
 	platform_folder="${version_folder}/${platform}"
 
 	if [ ${platform} == ${android_platform} ]; then
-		adb shell am start -n ${bundle_id}/com.dynamo.android.DefoldActivity
+		# For debug builds, the package name has .debug appended
+		app_package_id="${bundle_id}"
+		if [ "${mode}" == "debug" ]; then
+			app_package_id="${bundle_id}.debug"
+			echo "Using debug package name: ${app_package_id}"
+		fi
+		adb shell am start -n ${app_package_id}/com.dynamo.android.DefoldActivity
 		adb logcat -s defold
 	fi
 
 	if [ ${platform} == ${ios_platform} ]; then
 		filename_app="${platform_folder}/${file_prefix_name}_${mode}.app"
-		ios-deploy -I -m -b ${filename_app} | grep ${title_no_space}
+		ios-deploy -I -m -b ${filename_app} #| grep ${title_no_space}
 	fi
 
 	if [ ${platform} == ${linux_platform} ]; then
@@ -729,7 +738,7 @@ upload_to_steam() {
     if [ -z "$vdf_path" ]; then
         local vdf_dir="${script_path}/steam_vdf"
         mkdir -p "$vdf_dir"
-        
+
         # Create app build VDF
         local app_vdf="${vdf_dir}/app_${steam_app_id}.vdf"
         echo "Creating basic Steam app VDF at ${app_vdf}"
@@ -771,7 +780,7 @@ upload_to_steam() {
     echo -e "App ID: \x1B[33m${steam_app_id}\x1B[0m"
     echo -e "Depot ID: \x1B[33m${steam_depot_id}\x1B[0m"
     echo -e "VDF Path: \x1B[33m${vdf_path}\x1B[0m"
-    
+
     # Determine which steamcmd to use based on OS
     local steamcmd_path="steamcmd"
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -794,12 +803,12 @@ upload_to_steam() {
             steamcmd_path="C:/steamcmd/steamcmd.exe"
         fi
     fi
-    
+
     echo -e "Using SteamCMD: \x1B[33m${steamcmd_path}\x1B[0m"
-    
+
     # Run SteamCMD to upload the build
     "$steamcmd_path" +login "${steam_username}" +run_app_build "${vdf_path}" +quit
-    
+
     echo -e "\x1B[32mSteam upload process completed\x1B[0m"
     echo -e "\x1B[32mCheck your Steam Partner dashboard to verify the upload\x1B[0m"
 }
@@ -938,6 +947,12 @@ if $is_ios; then
 fi
 
 if $is_android; then
+	# Check if this is a debug build with debug settings
+	if [ "$mode" == "debug" ] && [ -f "settings_android_debug.ini" ]; then
+		echo -e "\nUsing Android debug settings from settings_android_debug.ini"
+		settings_params="${settings_params} --settings settings_android_debug.ini"
+	fi
+
 	if ! $is_android_instant; then
 		# Just build usual Android build
 		if $is_build; then
