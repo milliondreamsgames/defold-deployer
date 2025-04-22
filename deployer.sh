@@ -575,7 +575,7 @@ build() {
 
 		if [ -n "$(find build/galaxy_bundles/ -maxdepth 1 -name '*.zip' -print -quit)" ]; then
 			# TODO: remove commits_count from this filename after client is updated
-			mv build/galaxy_bundles/*.zip "${platform_folder}/liveupdate_content/resources_${version}_${commits_count}.zip"
+			mv build/galaxy_bundles/*.zip "${platform_folder}/liveupdate_content/resources_${version}.zip"
 		fi
 
 		write_report ${platform} ${mode} ${target_path}
