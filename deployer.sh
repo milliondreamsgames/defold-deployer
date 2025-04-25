@@ -151,8 +151,7 @@ build_time=false
 title=$(less game.project | grep "^title = " | cut -d "=" -f2 | sed -e 's/^[[:space:]]*//')
 version=$(less game.project | grep "^version = " | cut -d "=" -f2 | sed -e 's/^[[:space:]]*//')
 version=${version:='0.0.0'}
-title_no_space=$(echo -e "${title}" | tr -d '[[:space:]]')
-title_no_space=$(echo -e "${title_no_space}" | tr -d '[\-]')
+title_no_space=$(echo -e "${title}" | tr -cd '[:alnum:]') # removes spaces, hyphens and special characters
 bundle_id=$(less game.project | grep "^package = " | cut -d "=" -f2 | sed -e 's/^[[:space:]]*//')
 
 ### Override last version number with commits count
@@ -298,7 +297,7 @@ build() {
 	fi
 
 	#clean first
-	rm -f -r build/galaxy_bundles/*.zip ./.deployer_cache ./build
+	rm -f -r ./.deployer_cache ./build
 
 	mkdir -p ${version_folder}
 
@@ -357,7 +356,7 @@ build() {
 
 	# Android platform
 	if [ ${platform} == ${android_platform} ]; then
-		line="${dist_folder}/Galaxy/Galaxy"
+		line="${dist_folder}/${title_no_space}/${title_no_space}"
 
 		if $is_fast_debug; then
 			echo "Build only one platform for faster build"
@@ -374,7 +373,7 @@ build() {
 		fi
 
 		if $is_build_html_report; then
-			additional_params=" -brhtml ${version_folder}/${filename}_android_report.html $additional_params"
+			additional_params=" -brhtml ${version_folder}/android_report.html $additional_params"
 		fi
 
 		if [ ! -z "$settings_android" ]; then
@@ -402,7 +401,7 @@ build() {
 		line="${dist_folder}/${title}"
 
 		if $is_build_html_report; then
-			additional_params=" -brhtml ${version_folder}/${filename}_ios_report.html $additional_params"
+			additional_params=" -brhtml ${version_folder}/iOS_report.html $additional_params"
 		fi
 
 		if $is_live_content; then
@@ -437,7 +436,7 @@ build() {
 		line="${dist_folder}/${title}"
 
 		if $is_build_html_report; then
-			additional_params=" -brhtml ${version_folder}/${filename}_html_report.html $additional_params"
+			additional_params=" -brhtml ${version_folder}/HTML5_report.html $additional_params"
 		fi
 
 		if [ ! -z "$settings_html" ]; then
@@ -500,7 +499,7 @@ build() {
 		line="${dist_folder}/${title}.app"
 
 		if $is_build_html_report; then
-			additional_params=" -brhtml ${version_folder}/${filename}_macos_report.html $additional_params"
+			additional_params=" -brhtml ${version_folder}/macOS_report.html $additional_params"
 		fi
 
 		#if $is_live_content; then
@@ -535,7 +534,7 @@ build() {
 		line="${dist_folder}/${title}"
 
 		if $is_build_html_report; then
-			additional_params=" -brhtml ${version_folder}/${filename}_windows_report.html $additional_params"
+			additional_params=" -brhtml ${version_folder}/windows_report.html $additional_params"
 		fi
 
 		#if $is_live_content; then
@@ -571,11 +570,11 @@ build() {
 			source ./$post_build_script
 		fi
 
-		mkdir "${platform_folder}/liveupdate_content"
+		mkdir -p "${platform_folder}/liveupdate_content"
 
-		if [ -n "$(find build/galaxy_bundles/ -maxdepth 1 -name '*.zip' -print -quit)" ]; then
-			# TODO: remove commits_count from this filename after client is updated
-			mv build/galaxy_bundles/*.zip "${platform_folder}/liveupdate_content/resources_${version}.zip"
+		# Check for liveupdate content in build directory
+		if [ -d "build/liveupdate_bundles" ] && [ -n "$(find build/liveupdate_bundles/ -maxdepth 1 -name '*.zip' -print -quit 2>/dev/null)" ]; then
+			mv build/liveupdate_bundles/*.zip "${platform_folder}/liveupdate_content/resources_${version}.zip"
 		fi
 
 		write_report ${platform} ${mode} ${target_path}
@@ -617,7 +616,7 @@ deploy() {
 		# For iOS debug deployment, we use `xcrun devicectl device install`, which works with .app files
 		filename="${platform_folder}/${file_prefix_name}_${mode}.app"
 		echo "Deploy to iOS from ${filename}"
-		bundle_id="com.MillionDreams.Galaxy" #hardcoded for now.
+		# Use the bundle_id from game.project
 
 		# Get device identifier
 		device_id=$(get_ios_device_id)
@@ -675,10 +674,7 @@ run() {
 	if [ ${platform} == ${ios_platform} ]; then
 		# with devicectl, we need to use the .app file
 		filename_app="${platform_folder}/${file_prefix_name}_${mode}.app"
-		# Unlike android debug builds, we don't need to add .debug to bundle_id
-		# Also, the bundle_id ends in "Galaxy" instead of "OnceUponAGalaxy" for iOS because
-		# we had to change it when migrating from my personal App Store Connect account
-		bundle_id="com.MillionDreams.Galaxy" #hardcoded for now.
+		# Unlike android debug builds, we don't need to add .debug to bundle_id for iOS
 
 		# Get device identifier
 		device_id=$(get_ios_device_id)
@@ -711,7 +707,7 @@ run() {
 		filename="${platform_folder}/${file_prefix_name}_${mode}_macos.app"
 
 		if [ ${mode} == "debug" ]; then
-			filename="${platform_folder}/Galaxy!.app/Contents/MacOS/Galaxy"
+			filename="${platform_folder}/${title}.app/Contents/MacOS/${title_no_space}"
 		fi
 
 		echo "Start MacOS build: $filename"
@@ -729,6 +725,7 @@ run() {
 
 clean_build_settings() {
 	rm -f ${version_settings_filename}
+	rm -f settings_android_debug_temp.ini
 }
 
 
@@ -1020,10 +1017,14 @@ if $is_ios; then
 fi
 
 if $is_android; then
-	# Check if this is a debug build with debug settings
-	if [ "$mode" == "debug" ] && [ -f "settings_android_debug.ini" ]; then
-		echo -e "\nUsing Android debug settings from settings_android_debug.ini"
-		settings_params="${settings_params} --settings settings_android_debug.ini"
+	# For debug builds, create a temporary settings file to add .debug suffix to package name
+	if [ "$mode" == "debug" ]; then
+		echo -e "\nAdding .debug suffix to Android package name for debug build"
+		# Create a temporary settings file to override the package name
+		echo "[android]
+package = ${bundle_id}.debug" > "settings_android_debug_temp.ini"
+		settings_params="${settings_params} --settings settings_android_debug_temp.ini"
+		# This file will be cleaned up when the script exits
 	fi
 
 	if ! $is_android_instant; then
