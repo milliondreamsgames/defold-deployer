@@ -152,8 +152,8 @@ title=$(less game.project | grep "^title = " | cut -d "=" -f2 | sed -e 's/^[[:sp
 version=$(less game.project | grep "^version = " | cut -d "=" -f2 | sed -e 's/^[[:space:]]*//')
 version=${version:='0.0.0'}
 title_no_space=$(echo -e "${title}" | tr -cd '[:alnum:]') # removes spaces, hyphens and special characters
-bundle_id=$(less game.project | grep "^package = " | cut -d "=" -f2 | sed -e 's/^[[:space:]]*//')
-
+bundle_id_android=$(less game.project | grep "^package = " | cut -d "=" -f2 | sed -e 's/^[[:space:]]*//')
+bundle_id_ios=$(less game.project | grep "^bundle_identifier = " | cut -d "=" -f2 | sed -e 's/^[[:space:]]*//')
 ### Override last version number with commits count
 if $enable_incremental_version; then
 	version="${version%.*}.$commits_count"
@@ -373,7 +373,7 @@ build() {
 		fi
 
 		if $is_build_html_report; then
-			additional_params=" -brhtml ${version_folder}/android_report.html $additional_params"
+			additional_params=" -brhtml ${version_folder}/Android_report.html $additional_params"
 		fi
 
 		if [ ! -z "$settings_android" ]; then
@@ -465,7 +465,7 @@ build() {
 		line="${dist_folder}/${title}"
 
 		if $is_build_html_report; then
-			additional_params=" -brhtml ${version_folder}/${filename}_linux_report.html $additional_params"
+			additional_params=" -brhtml ${version_folder}/Linux_report.html $additional_params"
 		fi
 
 		#if $is_live_content; then
@@ -616,7 +616,6 @@ deploy() {
 		# For iOS debug deployment, we use `xcrun devicectl device install`, which works with .app files
 		filename="${platform_folder}/${file_prefix_name}_${mode}.app"
 		echo "Deploy to iOS from ${filename}"
-		# Use the bundle_id from game.project
 
 		# Get device identifier
 		device_id=$(get_ios_device_id)
@@ -631,8 +630,8 @@ deploy() {
 
 		if [ $? -ne 0 ]; then
 			echo -e "\x1B[33m[WARNING]: devicectl install failed, trying ios-deploy as fallback...\x1B[0m"
-			echo "Fallback command: ios-deploy -W --bundle ${filename} --bundle_id ${bundle_id}"
-			ios-deploy -W --bundle "${filename}" --bundle_id "${bundle_id}"
+			echo "Fallback command: ios-deploy -W --bundle ${filename} --bundle_id ${bundle_id_ios}"
+			ios-deploy -W --bundle "${filename}" --bundle_id "${bundle_id_ios}"
 		fi
 	fi
 
@@ -662,9 +661,9 @@ run() {
 
 	if [ ${platform} == ${android_platform} ]; then
 		# For debug builds, the package name has .debug appended
-		app_package_id="${bundle_id}"
+		app_package_id="${bundle_id_android}"
 		if [ "${mode}" == "debug" ]; then
-			app_package_id="${bundle_id}.debug"
+			app_package_id="${bundle_id_android}.debug"
 			echo "Using debug package name: ${app_package_id}"
 		fi
 		adb shell am start -n ${app_package_id}/com.dynamo.android.DefoldActivity
@@ -686,7 +685,7 @@ run() {
 		echo "Launching app on device ${device_id}..."
 
 		echo "Using console mode..."
-		launch_ios_app_with_console "$device_id" "$bundle_id"
+		launch_ios_app_with_console "$device_id" "$bundle_id_ios"
 		launch_status=$?
 
 		if [ $launch_status -ne 0 ]; then
@@ -750,7 +749,7 @@ get_ios_device_id() {
 
 launch_ios_app_with_console() {
 	local device_id=$1
-	local bundle_id=$2
+	local bundle_id=$2 # iOS bundle ID
 
 	# Launch the app with console output
 	echo "Launching app with console output..."
@@ -1022,7 +1021,7 @@ if $is_android; then
 		echo -e "\nAdding .debug suffix to Android package name for debug build"
 		# Create a temporary settings file to override the package name
 		echo "[android]
-package = ${bundle_id}.debug" > "settings_android_debug_temp.ini"
+package = ${bundle_id_android}.debug" > "settings_android_debug_temp.ini"
 		settings_params="${settings_params} --settings settings_android_debug_temp.ini"
 		# This file will be cleaned up when the script exits
 	fi
