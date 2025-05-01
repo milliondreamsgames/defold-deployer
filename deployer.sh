@@ -88,6 +88,8 @@ enable_incremental_android_version_code=false
 is_steam_upload=false
 steam_app_id=""
 steam_depot_id=""
+steam_depot_id_windows=""
+steam_depot_id_macos=""
 steam_username=""
 steam_vdf_path=""
 
@@ -850,11 +852,29 @@ upload_to_steam() {
         return 0
     fi
 
-    if [ -z "$steam_app_id" ] || [ -z "$steam_depot_id" ] || [ -z "$steam_username" ]; then
+    # Determine which depot ID to use based on platform
+    local depot_id="${steam_depot_id}"
+
+    if [ ${platform} == ${windows_platform} ] && [ ! -z "$steam_depot_id_windows" ]; then
+        depot_id="${steam_depot_id_windows}"
+        echo -e "Using Windows-specific depot ID: \x1B[33m${depot_id}\x1B[0m"
+    elif [ ${platform} == ${macos_platform} ] && [ ! -z "$steam_depot_id_macos" ]; then
+        depot_id="${steam_depot_id_macos}"
+        echo -e "Using macOS-specific depot ID: \x1B[33m${depot_id}\x1B[0m"
+    fi
+
+    # Check if we have the required Steam credentials
+    if [ -z "$steam_app_id" ] || [ -z "$depot_id" ] || [ -z "$steam_username" ]; then
         echo -e "\x1B[33mSkipping Steam upload: credentials not configured\x1B[0m"
         echo "Required settings in settings_deployer:"
         echo "  steam_app_id"
-        echo "  steam_depot_id"
+        if [ ${platform} == ${windows_platform} ]; then
+            echo "  steam_depot_id_windows (or steam_depot_id as fallback)"
+        elif [ ${platform} == ${macos_platform} ]; then
+            echo "  steam_depot_id_macos (or steam_depot_id as fallback)"
+        else
+            echo "  steam_depot_id"
+        fi
         echo "  steam_username"
         return 0
     fi
@@ -868,7 +888,9 @@ upload_to_steam() {
         # Create app build VDF
         local app_vdf="${vdf_dir}/app_${steam_app_id}.vdf"
         echo "Creating basic Steam app VDF at ${app_vdf}"
-        echo "\"appbuild\"
+
+        # Start the app VDF content
+        local app_vdf_content="\"appbuild\"
 {
     \"appid\" \"${steam_app_id}\"
     \"desc\" \"${title} ${version} ${mode} build\"
@@ -878,17 +900,25 @@ upload_to_steam() {
     \"preview\" \"1\"
     \"local\" \"\"
     \"depots\"
-    {
-        \"${steam_depot_id}\" \"${vdf_dir}/depot_${steam_depot_id}.vdf\"
+    {"
+
+        # Add the depot entry for the current platform
+        app_vdf_content+="
+        \"${depot_id}\" \"${vdf_dir}/depot_${depot_id}.vdf\""
+
+        app_vdf_content+="
     }
-}" > "$app_vdf"
+}"
+
+        # Write the app VDF content to file
+        echo "${app_vdf_content}" > "$app_vdf"
 
         # Create depot build VDF
-        local depot_vdf="${vdf_dir}/depot_${steam_depot_id}.vdf"
+        local depot_vdf="${vdf_dir}/depot_${depot_id}.vdf"
         echo "Creating basic Steam depot VDF at ${depot_vdf}"
         echo "\"DepotBuildConfig\"
 {
-    \"DepotID\" \"${steam_depot_id}\"
+    \"DepotID\" \"${depot_id}\"
     \"ContentRoot\" \"${version_folder}/${platform}\"
     \"FileMapping\"
     {
@@ -904,7 +934,7 @@ upload_to_steam() {
 
     echo -e "\x1B[36mUploading to Steam: ${target_path}\x1B[0m"
     echo -e "App ID: \x1B[33m${steam_app_id}\x1B[0m"
-    echo -e "Depot ID: \x1B[33m${steam_depot_id}\x1B[0m"
+    echo -e "Depot ID: \x1B[33m${depot_id}\x1B[0m"
     echo -e "VDF Path: \x1B[33m${vdf_path}\x1B[0m"
 
     # Determine which steamcmd to use based on OS
