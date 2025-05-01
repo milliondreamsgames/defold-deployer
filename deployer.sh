@@ -17,7 +17,7 @@
 ## 	w - add target platform Windows
 ## 	l - add target platform Linux
 ## 	m - add target platform MacOS
-## 	r - set build mode to Release
+## 	r - set build mode to Release (Mac and Windows release builds will be automatically zipped)
 ## 	b - build project (game bundle will be in ./dist folder)
 ## 	d - deploy bundle to connected device
 ## 		it will deploy && run bundle on Android/iOS with reading logs to terminal
@@ -522,6 +522,8 @@ build() {
 		export DEPLOYER_ARTIFACT_PATH="${target_path}"
 
 		if [ ${mode} == "release" ]; then
+			# Zip the macOS build
+			zip_release_build ${platform} ${mode} ${target_path}
 
 			if $is_steam_upload; then
 				upload_to_steam ${platform} ${mode} ${target_path}
@@ -557,6 +559,9 @@ build() {
 		export DEPLOYER_ARTIFACT_PATH="${target_path}"
 
 		if [ ${mode} == "release" ]; then
+			# Zip the Windows build
+			zip_release_build ${platform} ${mode} ${target_path}
+
 			if $is_steam_upload; then
 				upload_to_steam ${platform} ${mode} ${target_path}
 			fi
@@ -779,6 +784,58 @@ upload_to_transporter() {
         --password "${transporter_password}" \
         --team-id "${transporter_team_id}" \
         --wait
+}
+
+zip_release_build() {
+    local platform=$1
+    local mode=$2
+    local target_path=$3
+
+    # Only zip release builds
+    if [ "${mode}" != "release" ]; then
+        return 0
+    fi
+
+    echo -e "\x1B[36mZipping release build: ${target_path}\x1B[0m"
+
+    if [ ${platform} == ${macos_platform} ]; then
+        # For Mac, zip the .app file
+        local zip_filename="${platform_folder}/${file_prefix_name}_${mode}_macos.zip"
+        echo "Creating zip archive for macOS: ${zip_filename}"
+
+        # Navigate to the directory containing the .app file
+        local current_dir=$(pwd)
+        cd "${platform_folder}"
+
+        # Get just the app name without the path
+        local app_name=$(basename "${target_path}")
+
+        # Zip the .app file
+        zip -r "${file_prefix_name}_${mode}_macos.zip" "${app_name}" -x "*.DS_Store" -x "*/.*"
+
+        # Return to original directory
+        cd "${current_dir}"
+
+        echo -e "\x1B[32mMacOS zip archive created: ${zip_filename}\x1B[0m"
+    fi
+
+    if [ ${platform} == ${windows_platform} ]; then
+        # For Windows, zip all the contents inside the build folder
+        local zip_filename="${target_path}/${file_prefix_name}_${mode}_windows.zip"
+        echo "Creating zip archive for Windows: ${zip_filename}"
+
+        # Navigate to inside the Windows build folder
+        local current_dir=$(pwd)
+        cd "${target_path}"
+
+        # Zip all contents of the current directory
+        zip -r "${file_prefix_name}_${mode}_windows.zip" ./* -x "*.zip"
+
+        # Return to original directory
+        cd "${current_dir}"
+
+        echo -e "\x1B[32mWindows zip archive created: ${zip_filename}\x1B[0m"
+    fi
 }
 
 # TODO: finish implementing and testing this.
