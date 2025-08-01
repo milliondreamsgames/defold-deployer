@@ -22,6 +22,8 @@
 ## 	d - deploy bundle to connected device
 ## 		it will deploy && run bundle on Android/iOS with reading logs to terminal
 ## 		for Android debug builds, it automatically handles the .debug suffix in package name
+## 		for iOS, if multiple devices are detected, your last used device will be automatically selected
+## 		your iOS device selection will be remembered and reused for both deployment and running
 ## 	--fast - only one Android platform, without resolve (for faster builds)
 ## 	--no-resolve - build without dependency resolve
 ## 	--headless - set mode to headless. Override release mode
@@ -29,6 +31,7 @@
 ## 	--param {x} - add flag {x} to bob.jar. Can be used several times
 ## 	--instant - it preparing bundle for Android Instant Apps. Always in release mode
 ##  --steam - upload release builds to Steam using SteamCMD (only works with release mode)
+##  --reset-ios-device - reset the saved iOS device preference
 ##
 ## 	Example:
 ## 	./deployer.sh abd - build, deploy and run Android bundle
@@ -44,6 +47,9 @@
 ###
 
 clean() {
+	# Clean up any running spinners first
+	cleanup_spinner
+	
 	clean_build_settings
 
 	if $is_build_started; then
@@ -63,10 +69,194 @@ clean_build_settings() {
 	rm -f ${version_settings_filename}
 }
 
+# Animated spinner functions for delightful build progress
+spin() {
+    local delay=0.15
+    local animated_stars=("✨" "🌟" "⭐" "" "✦" "✧" "★")
+    local fade_chars=("✧" "✦" "☆" "·")
+    local sparkle_chars=("⚡️" "💥" "💫")
+	local event_sparkle_chars=("⚡️" "🧚" "💥" "💫" "🧚‍♀️" "🧚‍♂️" "🧸" "🧞‍♂️" "🧞‍♀️" "🧞" "🪐" "🌎" "🌍")
+    local max_trail_length=999
+    local cycle_count=0
+    local trail_length=1
+    local start_time=$(date +%s)
+    
+    # Enhanced rainbow colors with more variety
+    local colors=(
+        "\033[38;5;196m"  # Bright Red
+        "\033[38;5;208m"  # Orange
+        "\033[38;5;226m"  # Bright Yellow  
+        "\033[38;5;118m"  # Bright Green
+        "\033[38;5;45m"   # Cyan
+        "\033[38;5;33m"   # Sky Blue
+        "\033[38;5;129m"  # Purple
+        "\033[38;5;201m"  # Magenta
+        "\033[38;5;219m"  # Pink
+    )
+    local reset_color="\033[0m"
+    local bold="\033[1m"
+    
+    tput civis  # Hide cursor
+    
+    while true; do
+        # Calculate current trail length - grows more dynamically
+        if (( cycle_count > 0 && cycle_count % 8 == 0 )); then
+            if (( trail_length < max_trail_length )); then
+                ((trail_length++))
+            fi
+        fi
+        
+        # Calculate elapsed time
+        local current_time=$(date +%s)
+        local elapsed=$((current_time - start_time))
+        local elapsed_display="${elapsed}s"
+        
+        # Get animated leading star character with bold styling
+        local star_idx=$((cycle_count % ${#animated_stars[@]}))
+        local leading_color_idx=$((cycle_count % ${#colors[@]}))
+        local leading_star="${bold}${colors[$leading_color_idx]}${animated_stars[$star_idx]}${reset_color}"
+        
+        # Build the magnificent rainbow star trail
+        local display_trail=""
+        for (( i=0; i < trail_length; i++ )); do
+            # Create flowing rainbow effect with offset colors
+            local trail_color_idx=$(( (cycle_count + i * 2) % ${#colors[@]} ))
+            local trail_color="${colors[$trail_color_idx]}"
+            
+            if (( i == 0 )); then
+                # Leading star - most brilliant
+                display_trail="${leading_star}${display_trail}"
+            elif (( i <= 2 )); then
+                # Close trailing stars - bright and sparkly
+                local sparkle_idx=$(( (cycle_count + i) % ${#sparkle_chars[@]} ))
+                display_trail="${trail_color}${sparkle_chars[$sparkle_idx]}${reset_color}${display_trail}"
+            elif (( i <= 6 )); then
+                # Middle trail - fading stars
+                local fade_idx=$(( (i-3) % ${#fade_chars[@]} ))
+                display_trail="${trail_color}${fade_chars[$fade_idx]}${reset_color}${display_trail}"
+            else
+                # Long tail - subtle sparkles and dots
+                local fade_pattern=$(( (cycle_count + i) % 4 ))
+                if (( fade_pattern == 0 )); then
+                    display_trail="${trail_color}·${reset_color}${display_trail}"
+                elif (( fade_pattern == 1 )); then
+                    display_trail="${trail_color}˙${reset_color}${display_trail}"
+                else
+                    display_trail="${trail_color}․${reset_color}${display_trail}"
+                fi
+            fi
+        done
+        
+        # Show the magnificent sparkling trail
+        printf "\r\033[K${display_trail} ${elapsed_display}"
+        sleep $delay
+        ((cycle_count++))
+    done
+}
+
+# Global variable to track spinner PID for cleanup
+SPINNER_PID=""
+
+cleanup_spinner() {
+    if [ -n "$SPINNER_PID" ]; then
+        kill $SPINNER_PID 2>/dev/null
+        wait $SPINNER_PID 2>/dev/null
+        SPINNER_PID=""
+        printf "\r\033[K"  # Clear spinner line
+        tput cnorm  # Show cursor
+    fi
+}
+
+# Enhanced progress display with combined spinner and stats
+show_progress_with_spinner() {
+    local step_description="$1"
+    local show_progress="$2"  # "true" to show progress bar below spinner
+    shift 2
+    
+    # Show step start message with timestamp
+    if [ -n "$step_description" ]; then
+        echo "[$(date +'%H:%M:%S')] $step_description"
+    fi
+    
+    local step_start_time=$(date +%s)
+    
+    if [ "$show_progress" == "true" ]; then
+        # Start spinner in background
+        spin &
+        SPINNER_PID=$!
+        
+        # Show initial progress line (will be updated by progress.js calls)
+        echo ""
+        echo "[████████░░] 0% | Initializing..."
+        
+        # Set up trap for cleanup
+        trap 'cleanup_spinner; exit 130' INT
+        
+        # Run the actual command
+        "$@"
+        local exit_code=$?
+        
+        # Clean up spinner
+        cleanup_spinner
+    else
+        # Simple execution without spinner for quick commands
+        "$@"
+        local exit_code=$?
+    fi
+    
+    # Calculate completion time
+    local step_end_time=$(date +%s)
+    local step_duration=$((step_end_time - step_start_time))
+    
+    # Show completion message
+    if [ $exit_code -eq 0 ]; then
+        if [ -n "$step_description" ]; then
+            echo -e "\n\033[32m[✅ SUCCESS]\033[0m Completed in ${step_duration}s"
+        else
+            echo -e "\033[32m[✅]\033[0m Completed"
+        fi
+    else
+        if [ -n "$step_description" ]; then
+            echo -e "\n\033[31m[❌ FAILED]\033[0m After ${step_duration}s (exit code: $exit_code)"
+        else
+            echo -e "\033[31m[❌]\033[0m Failed (exit code: $exit_code)"
+        fi
+    fi
+    
+    return $exit_code
+}
+
+# Legacy wrapper for backward compatibility
+start_spinner() {
+    show_progress_with_spinner "$@" "false"
+}
+
+
 ### Exit on Cmd+C / Ctrl+C
-trap "exit" INT
+# Enhanced trap handling to ensure proper cleanup on interruption
+handle_interrupt() {
+	echo -e "\n\x1B[33m[INTERRUPTED]: Script cancelled by user\x1B[0m"
+	cleanup_spinner
+	exit 130
+}
+
+trap handle_interrupt INT
 trap clean EXIT
 set -e
+
+### Early argument parsing for special commands that don't require game.project
+ios_device_preference_filename=".ios_device_preference"
+for arg in "$@"; do
+	if [ "$arg" == "--reset-ios-device" ]; then
+		if [ -f "$ios_device_preference_filename" ]; then
+			rm -f "$ios_device_preference_filename"
+			echo -e "\x1B[32mReset iOS device preference\x1B[0m"
+		else
+			echo -e "\x1B[33mNo iOS device preference found to reset\x1B[0m"
+		fi
+		exit 0
+	fi
+done
 
 if [ ! -f ./game.project ]; then
 	echo -e "\x1B[31m[ERROR]: ./game.project not exist\x1B[0m"
@@ -88,12 +278,15 @@ enable_incremental_android_version_code=false
 is_steam_upload=false
 steam_app_id=""
 steam_depot_id=""
+steam_depot_id_windows=""
+steam_depot_id_macos=""
 steam_username=""
 steam_vdf_path=""
 
 ### Settings loading
 settings_filename="settings_deployer"
 script_path="`dirname \"$0\"`"
+progress_script="${script_path}/progress.js"
 is_settings_exist=false
 
 if [ -f ${script_path}/${settings_filename} ]; then
@@ -117,6 +310,36 @@ if ! $is_settings_exist ; then
 	exit
 fi
 
+### Load transporter credentials from environment variables or zshrc
+load_transporter_credentials() {
+	# First try environment variables
+	if [ -n "$TRANSPORTER_USERNAME" ] && [ -n "$TRANSPORTER_PASSWORD" ] && [ -n "$TRANSPORTER_TEAM_ID" ]; then
+		transporter_username="$TRANSPORTER_USERNAME"
+		transporter_password="$TRANSPORTER_PASSWORD"
+		transporter_team_id="$TRANSPORTER_TEAM_ID"
+		return 0
+	fi
+
+	# If environment variables are not set, try to load from zshrc
+	if [ -f ~/.zshrc ]; then
+		echo "Loading transporter credentials from ~/.zshrc..."
+		# Extract the export lines and evaluate them
+		eval $(grep "export TRANSPORTER_USERNAME=" ~/.zshrc)
+		eval $(grep "export TRANSPORTER_PASSWORD=" ~/.zshrc)
+		eval $(grep "export TRANSPORTER_TEAM_ID=" ~/.zshrc)
+
+		transporter_username="$TRANSPORTER_USERNAME"
+		transporter_password="$TRANSPORTER_PASSWORD"
+		transporter_team_id="$TRANSPORTER_TEAM_ID"
+	else
+		transporter_username=""
+		transporter_password=""
+		transporter_team_id=""
+	fi
+}
+
+load_transporter_credentials
+
 
 ### Constants
 build_date=`date -u +"%Y-%m-%dT%H:%M:%SZ"`
@@ -127,6 +350,8 @@ linux_platform="x86_64-linux"
 windows_platform="x86_64-win32"
 macos_platform="x86_64-macos"
 version_settings_filename="deployer_version_settings.txt"
+ios_device_preference_filename=".ios_device_preference"
+selected_ios_device_id=""  # Global variable to store selected device ID for reuse
 build_output_folder="./build/default_deployer"
 dist_folder="./dist"
 bundle_folder="${dist_folder}/bundle"
@@ -188,8 +413,10 @@ download_bob() {
 
 		BOB_URL="https://d.defold.com/archive/${bob_channel}/${bob_sha}/bob/bob.jar"
 		echo "Unable to find bob${bob_version}.jar. Downloading it from d.defold.com: ${BOB_URL}}"
-		echo "curl -L -o ${bob_path} ${BOB_URL}"
-		curl -L -o ${bob_path} ${BOB_URL}
+	# Show progress for downloading Bob with enhanced display
+	echo "[🔽] Downloading Bob build tool..."
+	show_progress_with_spinner "Downloading Bob JAR file" "true" curl -L -o ${bob_path} ${BOB_URL}
+	echo "[✅] Bob download complete"
 	fi
 }
 download_bob
@@ -217,11 +444,11 @@ add_to_gitignore() {
 
 	if [ ! -f ./.gitignore ]; then
 		touch .gitignore
-		echo -e "\Create .gitignore file"
+		echo -e "\Create .gitignore file" >&2
 	fi
 
 	if ! grep -Fxq "$1" .gitignore; then
-		echo "Add $1 to .gitignore"
+		echo "Add $1 to .gitignore" >&2
 		echo -e "\n$1" >> .gitignore
 	fi
 }
@@ -248,8 +475,10 @@ write_report() {
 
 
 resolve_bob() {
-	echo "Resolving libraries..."
-	java -jar ${bob_path} --email foo@bar.com --auth 12345 resolve || try_fix_libraries
+	# Show progress for library resolution with enhanced spinner
+	echo "[📦] Resolving project dependencies..."
+	show_progress_with_spinner "Resolving libraries and dependencies" "true" java -jar ${bob_path} --email foo@bar.com --auth 12345 resolve || try_fix_libraries
+	echo "[✅] Dependencies resolved"
 	echo ""
 }
 
@@ -259,7 +488,7 @@ bob() {
 	java --version
 	java -jar ${bob_path} --version
 
-	args="-jar ${bob_path} --archive --output ${build_output_folder} --bundle-output ${dist_folder} --variant $@"
+	args="java -jar ${bob_path} --archive --output ${build_output_folder} --bundle-output ${dist_folder} --variant $@"
 
 	if ! $no_strip_executable; then
 		args+=" --strip-executable"
@@ -282,8 +511,22 @@ bob() {
 
 	start_build_time=`date +%s`
 
-	echo -e "Build command: java ${args}"
-	java ${args}
+	echo -e "Build command: ${args}"
+	echo "[🔨] Building project with Bob..."
+	echo "\n=== BUILD OUTPUT ==="
+
+	# Run the build command directly with live output
+	${args}
+	local build_exit_code=$?
+
+	echo "\n=== END BUILD OUTPUT ==="
+
+	if [ $build_exit_code -eq 0 ]; then
+		echo "[✅] Build process completed successfully"
+	else
+		echo "[❌] Build process FAILED with exit code: $build_exit_code"
+		return $build_exit_code
+	fi
 
 	build_time=$((`date +%s`-start_build_time))
 	echo -e "Build time: $build_time seconds\n"
@@ -398,6 +641,7 @@ build() {
 
 	# iOS platform
 	if [ ${platform} == ${ios_platform} ]; then
+		# For iOS, Bob creates files using the actual title, not title_no_space
 		line="${dist_folder}/${title}"
 
 		if $is_build_html_report; then
@@ -416,19 +660,55 @@ build() {
 		bob ${mode} --platform ${platform} --architectures arm64-ios --identity ${ident} --mobileprovisioning ${prov} \
 			--build-server ${build_server} ${additional_params}
 
+		# Debug: Show what files were actually created
+		echo "Checking for build artifacts in ${dist_folder}..."
+		ls -la "${dist_folder}" || echo "dist folder not found"
+		echo "Looking for iOS artifacts with pattern: ${line}.*"
+		find "${dist_folder}" -name "${title}*" -type f 2>/dev/null || echo "No iOS artifacts found matching ${title}"
+
 		target_path="${platform_folder}/${filename}.ipa"
 		rm -rf ${target_path}
-		mv "${line}.ipa" ${target_path} && is_build_success=true
+		
+		# Try to find and move the .ipa file
+		if [ -f "${line}.ipa" ]; then
+			echo "Found .ipa file: ${line}.ipa"
+			mv "${line}.ipa" ${target_path} && is_build_success=true
+		else
+			echo "Expected .ipa file not found at: ${line}.ipa"
+			# Try to find any .ipa file in the dist folder
+			ipa_file=$(find "${dist_folder}" -name "*.ipa" -type f | head -1)
+			if [ -n "$ipa_file" ]; then
+				echo "Found alternative .ipa file: $ipa_file"
+				mv "$ipa_file" ${target_path} && is_build_success=true
+			else
+				echo "No .ipa file found in ${dist_folder}"
+			fi
+		fi
 
 		rm -rf "${platform_folder}/${filename}.app"
-		mv "${line}.app" "${platform_folder}/${filename}.app"
+		
+		# Try to find and move the .app file
+		if [ -d "${line}.app" ]; then
+			echo "Found .app bundle: ${line}.app"
+			mv "${line}.app" "${platform_folder}/${filename}.app"
+		else
+			echo "Expected .app bundle not found at: ${line}.app"
+			# Try to find any .app bundle in the dist folder
+			app_bundle=$(find "${dist_folder}" -name "*.app" -type d | head -1)
+			if [ -n "$app_bundle" ]; then
+				echo "Found alternative .app bundle: $app_bundle"
+				mv "$app_bundle" "${platform_folder}/${filename}.app"
+			else
+				echo "No .app bundle found in ${dist_folder}"
+			fi
+		fi
 
 		export DEPLOYER_ARTIFACT_PATH="${target_path}"
 
 		# Upload to Transporter if this is a release build
-		if [ ${mode} == "release" ]; then
-			upload_to_transporter "${target_path}"
-		fi
+		#if [ ${mode} == "release" ]; then
+		#	upload_to_transporter "${target_path}"
+		#fi
 	fi
 
 	# HTML5 platform
@@ -512,7 +792,7 @@ build() {
 		fi
 
 		echo "Start build MacOS ${mode}"
-		bob ${mode} --platform ${platform} ${additional_params}
+		bob ${mode} --platform ${platform} --build-server ${build_server} ${additional_params}
 
 		target_path="${platform_folder}/${title}.app"
 
@@ -623,11 +903,14 @@ deploy() {
 		echo "Deploy to iOS from ${filename}"
 
 		# Get device identifier
-		device_id=$(get_ios_device_id)
+		device_id=$(select_ios_device)
 		if [ -z "$device_id" ]; then
-			echo -e "\x1B[31m[ERROR]: No iOS device found\x1B[0m"
+			echo -e "\x1B[31m[ERROR]: No iOS device selected\x1B[0m"
 			return 1
 		fi
+
+		# Store the selected device ID for reuse in run phase
+		selected_ios_device_id="$device_id"
 
 		echo "Installing app to device ${device_id}..."
 		echo "Install command: xcrun devicectl device install app --device ${device_id} \"${filename}\""
@@ -680,11 +963,14 @@ run() {
 		filename_app="${platform_folder}/${file_prefix_name}_${mode}.app"
 		# Unlike android debug builds, we don't need to add .debug to bundle_id for iOS
 
-		# Get device identifier
-		device_id=$(get_ios_device_id)
+		# Use the device ID from deployment phase if available, otherwise select device
+		device_id="$selected_ios_device_id"
 		if [ -z "$device_id" ]; then
-			echo -e "\x1B[31m[ERROR]: No iOS device found\x1B[0m"
-			return 1
+			device_id=$(select_ios_device)
+			if [ -z "$device_id" ]; then
+				echo -e "\x1B[31m[ERROR]: No iOS device selected\x1B[0m"
+				return 1
+			fi
 		fi
 
 		echo "Launching app on device ${device_id}..."
@@ -733,24 +1019,160 @@ clean_build_settings() {
 }
 
 
-get_ios_device_id() {
-	# Try to get the device ID using devicectl
-	local device_list=$(xcrun devicectl list devices 2>/dev/null)
-	if [ $? -eq 0 ] && [ -n "$device_list" ]; then
-		# assume the first device in the list is the one we want
-		local device_id=$(echo "$device_list" | grep -o "[0-9A-Fa-f]\{8\}-[0-9A-Fa-f]\{4\}-[0-9A-Fa-f]\{4\}-[0-9A-Fa-f]\{4\}-[0-9A-Fa-f]\{12\}" | head -1)
+get_all_ios_devices() {
+	# Try to get all available iOS devices using devicectl with retry logic
+	local max_attempts=3
+	local attempt=1
 
-		if [ -n "$device_id" ]; then
-			echo "$device_id"
-			return 0
+	while [ $attempt -le $max_attempts ]; do
+		local device_list=$(xcrun devicectl list devices 2>/dev/null)
+		local devicectl_exit_code=$?
+
+		# Debug info for failed attempts
+		if [ $devicectl_exit_code -ne 0 ] || [ -z "$device_list" ]; then
+			echo "Attempt $attempt failed - devicectl exit code: $devicectl_exit_code, output length: ${#device_list}" >&2
 		fi
-	fi
 
-	# If we get here, no device was found
-	echo "No iOS device ID could be found" >&2
+		if [ $devicectl_exit_code -eq 0 ] && [ -n "$device_list" ]; then
+			# Parse the device table and collect all available devices
+			# Skip the header lines and process each device line
+			local devices_info=""
+			local temp_file=$(mktemp)
+
+			echo "$device_list" | tail -n +3 | while IFS= read -r line; do
+				# Skip empty lines and separator lines
+				if [[ -z "$line" || "$line" =~ ^[[:space:]]*-+[[:space:]]*$ ]]; then
+					continue
+				fi
+
+				# Extract UUID pattern from the line (this is the device identifier)
+				local identifier=$(echo "$line" | grep -o "[0-9A-Fa-f]\{8\}-[0-9A-Fa-f]\{4\}-[0-9A-Fa-f]\{4\}-[0-9A-Fa-f]\{4\}-[0-9A-Fa-f]\{12\}")
+
+				# Check if the line contains "available", "connected", or "available (paired)" but not "unavailable"
+				if [[ "$line" =~ (available|connected) ]] && [[ ! "$line" =~ unavailable ]]; then
+					if [ -n "$identifier" ]; then
+						# Extract device name (everything before the identifier)
+						local device_name=$(echo "$line" | sed "s/${identifier}.*//g" | sed 's/[[:space:]]*$//')
+						echo "${identifier}|${device_name}|${line}" >> "$temp_file"
+					fi
+				fi
+			done
+
+			# Read the results from temp file and output them
+			if [ -s "$temp_file" ]; then
+				cat "$temp_file"
+				rm -f "$temp_file"
+				return 0
+			fi
+			rm -f "$temp_file"
+		fi
+
+		# Only show retry message if not the last attempt
+		if [ $attempt -lt $max_attempts ]; then
+			echo "No available iOS devices found on attempt $attempt, retrying in 5 seconds..." >&2
+			sleep 5
+		fi
+		attempt=$((attempt + 1))
+	done
+
+	# If we get here, no available devices were found after all attempts
+	echo "No available iOS devices could be found after $max_attempts attempts" >&2
+	echo "Debug info - devicectl output:" >&2
+	xcrun devicectl list devices >&2 2>&1
 	return 1
 }
 
+select_ios_device() {
+	# Get all available devices
+	local devices_output=$(get_all_ios_devices)
+	local get_devices_exit_code=$?
+
+	if [ $get_devices_exit_code -ne 0 ]; then
+		echo -e "\x1B[31m[ERROR]: Failed to get iOS devices\x1B[0m" >&2
+		return 1
+	fi
+
+	# Convert output to array
+	local devices=()
+	local device_ids=()
+	local device_names=()
+
+	while IFS='|' read -r device_id device_name full_line; do
+		if [ -n "$device_id" ]; then
+			devices+=("$full_line")
+			device_ids+=("$device_id")
+			device_names+=("$device_name")
+		fi
+	done <<< "$devices_output"
+
+	# Check how many devices we found
+	local device_count=${#devices[@]}
+
+	if [ $device_count -eq 0 ]; then
+		echo -e "\x1B[31m[ERROR]: No available iOS devices found\x1B[0m" >&2
+		return 1
+	elif [ $device_count -eq 1 ]; then
+		# Only one device, use it automatically
+		echo "Found one iOS device: ${device_names[0]}" >&2
+		echo "${device_ids[0]}"
+		return 0
+	else
+		# Multiple devices found - check for saved preference
+		local preferred_device_id=""
+		local preferred_device_name=""
+		local preferred_device_index=-1
+
+		if [ -f "$ios_device_preference_filename" ]; then
+			preferred_device_id=$(cat "$ios_device_preference_filename" 2>/dev/null)
+
+			# Check if the preferred device is still available
+			for i in "${!device_ids[@]}"; do
+				if [ "${device_ids[$i]}" == "$preferred_device_id" ]; then
+					preferred_device_index=$i
+					preferred_device_name="${device_names[$i]}"
+					break
+				fi
+			done
+		fi
+
+		if [ $preferred_device_index -ge 0 ]; then
+			# Preferred device is available, use it automatically
+			echo "Using preferred device: ${preferred_device_name}" >&2
+			echo "$preferred_device_id"
+			return 0
+		else
+			# No valid preferred device, show full selection
+			echo -e "\x1B[36mMultiple iOS devices found:\x1B[0m" >&2
+			for i in "${!devices[@]}"; do
+				echo "  $((i+1)). ${device_names[$i]} (${device_ids[$i]})" >&2
+			done
+
+			echo -n "Please select a device (1-$device_count): " >&2
+			read -r selection
+
+			# Validate selection
+			if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le $device_count ]; then
+				local selected_index=$((selection-1))
+				save_ios_device_preference "${device_ids[$selected_index]}"
+				echo "Selected device: ${device_names[$selected_index]}" >&2
+				echo "${device_ids[$selected_index]}"
+				return 0
+			else
+				echo -e "\x1B[31m[ERROR]: Invalid selection. Please enter a number between 1 and $device_count\x1B[0m" >&2
+				return 1
+			fi
+		fi
+	fi
+}
+
+save_ios_device_preference() {
+	local device_id=$1
+	if [ -n "$device_id" ]; then
+		echo "$device_id" > "$ios_device_preference_filename"
+		add_to_gitignore "$ios_device_preference_filename"
+		echo "Device preference saved." >&2
+	fi
+}
 
 launch_ios_app_with_console() {
 	local device_id=$1
@@ -766,19 +1188,35 @@ launch_ios_app_with_console() {
 	return $?
 }
 
-# TODO: finish implementing and testing this.
 upload_to_transporter() {
     local file_path=$1
+
+    echo -e "\x1B[36mChecking Transporter credentials...\x1B[0m"
+    echo "Username: ${transporter_username:-'(not set)'}"
+    echo "Team ID: ${transporter_team_id:-'(not set)'}"
+    echo "Password: ${transporter_password:+'(set)'}"
+    if [ -z "$transporter_password" ]; then
+        echo "Password: (not set)"
+    fi
+
     if [ -z "$transporter_username" ] || [ -z "$transporter_password" ] || [ -z "$transporter_team_id" ]; then
         echo -e "\x1B[33mSkipping Transporter upload: credentials not configured\x1B[0m"
-        echo "Required settings in settings_deployer:"
-        echo "  transporter_username (Apple ID)"
-        echo "  transporter_password (App-specific password)"
-        echo "  transporter_team_id (Team ID from App Store Connect)"
+        echo "Required environment variables:"
+        echo "  TRANSPORTER_USERNAME (Apple ID)"
+        echo "  TRANSPORTER_PASSWORD (App-specific password)"
+        echo "  TRANSPORTER_TEAM_ID (Team ID from App Store Connect)"
+        echo "Add these to your ~/.zshrc file with:"
+        echo "  export TRANSPORTER_USERNAME=\"your_apple_id@example.com\""
+        echo "  export TRANSPORTER_PASSWORD=\"your_app_specific_password\""
+        echo "  export TRANSPORTER_TEAM_ID=\"your_team_id\""
         return 0
     fi
 
-    echo "Uploading to App Store Connect: ${file_path}"
+    echo -e "\x1B[32mTransporter credentials found! Uploading to App Store Connect...\x1B[0m"
+    echo "File: ${file_path}"
+    echo "Apple ID: ${transporter_username}"
+    echo "Team ID: ${transporter_team_id}"
+
     xcrun notarytool submit "${file_path}" \
         --apple-id "${transporter_username}" \
         --password "${transporter_password}" \
@@ -850,11 +1288,29 @@ upload_to_steam() {
         return 0
     fi
 
-    if [ -z "$steam_app_id" ] || [ -z "$steam_depot_id" ] || [ -z "$steam_username" ]; then
+    # Determine which depot ID to use based on platform
+    local depot_id="${steam_depot_id}"
+
+    if [ ${platform} == ${windows_platform} ] && [ ! -z "$steam_depot_id_windows" ]; then
+        depot_id="${steam_depot_id_windows}"
+        echo -e "Using Windows-specific depot ID: \x1B[33m${depot_id}\x1B[0m"
+    elif [ ${platform} == ${macos_platform} ] && [ ! -z "$steam_depot_id_macos" ]; then
+        depot_id="${steam_depot_id_macos}"
+        echo -e "Using macOS-specific depot ID: \x1B[33m${depot_id}\x1B[0m"
+    fi
+
+    # Check if we have the required Steam credentials
+    if [ -z "$steam_app_id" ] || [ -z "$depot_id" ] || [ -z "$steam_username" ]; then
         echo -e "\x1B[33mSkipping Steam upload: credentials not configured\x1B[0m"
         echo "Required settings in settings_deployer:"
         echo "  steam_app_id"
-        echo "  steam_depot_id"
+        if [ ${platform} == ${windows_platform} ]; then
+            echo "  steam_depot_id_windows (or steam_depot_id as fallback)"
+        elif [ ${platform} == ${macos_platform} ]; then
+            echo "  steam_depot_id_macos (or steam_depot_id as fallback)"
+        else
+            echo "  steam_depot_id"
+        fi
         echo "  steam_username"
         return 0
     fi
@@ -868,7 +1324,9 @@ upload_to_steam() {
         # Create app build VDF
         local app_vdf="${vdf_dir}/app_${steam_app_id}.vdf"
         echo "Creating basic Steam app VDF at ${app_vdf}"
-        echo "\"appbuild\"
+
+        # Start the app VDF content
+        local app_vdf_content="\"appbuild\"
 {
     \"appid\" \"${steam_app_id}\"
     \"desc\" \"${title} ${version} ${mode} build\"
@@ -878,17 +1336,25 @@ upload_to_steam() {
     \"preview\" \"1\"
     \"local\" \"\"
     \"depots\"
-    {
-        \"${steam_depot_id}\" \"${vdf_dir}/depot_${steam_depot_id}.vdf\"
+    {"
+
+        # Add the depot entry for the current platform
+        app_vdf_content+="
+        \"${depot_id}\" \"${vdf_dir}/depot_${depot_id}.vdf\""
+
+        app_vdf_content+="
     }
-}" > "$app_vdf"
+}"
+
+        # Write the app VDF content to file
+        echo "${app_vdf_content}" > "$app_vdf"
 
         # Create depot build VDF
-        local depot_vdf="${vdf_dir}/depot_${steam_depot_id}.vdf"
+        local depot_vdf="${vdf_dir}/depot_${depot_id}.vdf"
         echo "Creating basic Steam depot VDF at ${depot_vdf}"
         echo "\"DepotBuildConfig\"
 {
-    \"DepotID\" \"${steam_depot_id}\"
+    \"DepotID\" \"${depot_id}\"
     \"ContentRoot\" \"${version_folder}/${platform}\"
     \"FileMapping\"
     {
@@ -904,7 +1370,7 @@ upload_to_steam() {
 
     echo -e "\x1B[36mUploading to Steam: ${target_path}\x1B[0m"
     echo -e "App ID: \x1B[33m${steam_app_id}\x1B[0m"
-    echo -e "Depot ID: \x1B[33m${steam_depot_id}\x1B[0m"
+    echo -e "Depot ID: \x1B[33m${depot_id}\x1B[0m"
     echo -e "VDF Path: \x1B[33m${vdf_path}\x1B[0m"
 
     # Determine which steamcmd to use based on OS
@@ -1027,6 +1493,10 @@ do
 			is_steam_upload=true
 			shift
 		;;
+		--reset-ios-device)
+			# This is handled in early argument parsing, just skip it here
+			shift
+		;;
 		*) # Unknown option
 			shift
 		;;
@@ -1068,6 +1538,8 @@ if $is_ios; then
 	if $is_deploy; then
 		echo "Start deploy project to device"
 		deploy ${ios_platform} ${mode}
+		echo "Waiting 3 seconds for device to settle after installation..."
+		sleep 3
 		run ${ios_platform} ${mode}
 	fi
 fi

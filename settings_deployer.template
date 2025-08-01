@@ -92,8 +92,14 @@ android_cer_dist={path_to_certificate.pem}
 # Your Steam application ID
 steam_app_id=""
 
-# Your Steam depot ID
+# Your Steam depot ID (used as fallback if platform-specific IDs are not set)
 steam_depot_id=""
+
+# Your Steam depot ID for Windows builds
+steam_depot_id_windows=""
+
+# Your Steam depot ID for macOS builds
+steam_depot_id_macos=""
 
 # Your Steam username (account with access to the app)
 steam_username=""
