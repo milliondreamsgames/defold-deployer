@@ -7,6 +7,8 @@ Universal build && deploy script for *Defold* projects (Android, iOS, HTML5, Lin
 **Deployer** is configurable via settings_deployer file. It's allow use single deployer script for different projects
 
 ## Features
+- Enhanced audio feedback with different sounds for various events (tick sound, success, error, startup)
+- Improved progress indication with star collection mini-game and dynamic rainbow effects
 - Single deployment script on all Defold projects (Android, iOS, HTML5, Linux, MacOS, Windows)
 - One command to build, deploy and read logs from the mobile
 - Global and custom settings on project (provisions, bob version, etc)
@@ -94,7 +96,10 @@ Deployer need to run on root of your Defold project
 
 Filename will be name {ProjectName}\_{Version}\_{BuildMode}.[apk|ipa]
 
-##	Examples
+### Recent Changes
+See [Changelog](./docs/CHANGELOG.md) for detailed recent changes.
+
+### Examples
 ```bash
 # Build, deploy and run Android bundle
 deployer.sh abd

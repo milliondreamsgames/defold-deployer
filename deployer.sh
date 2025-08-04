@@ -47,8 +47,9 @@
 ###
 
 clean() {
-	# Clean up any running spinners first
+	# Clean up any running spinners and tick sounds first
 	cleanup_spinner
+	cleanup_tick_sound
 	
 	clean_build_settings
 
@@ -76,6 +77,26 @@ spin() {
     local fade_chars=("✧" "✦" "☆" "·")
     local sparkle_chars=("⚡️" "💥" "💫")
 	local event_sparkle_chars=("⚡️" "🧚" "💥" "💫" "🧚‍♀️" "🧚‍♂️" "🧸" "🧞‍♂️" "🧞‍♀️" "🧞" "🪐" "🌎" "🌍")
+    
+    # Mini-game variables
+    local collected_stars=0
+    local special_stars_collected=0
+    local rare_chance=5    # Start at 5% chance
+    local legendary_chance=1  # Start at 1% chance
+    local mythic_chance=0.1   # Start at 0.1% chance
+    
+    # Star collection types with display and points
+    local common_stars=("⭐" "★" "☆")
+    local rare_stars=("🌟" "✨" "💫")
+    local legendary_stars=("🧚" "🧚‍♀️" "🧚‍♂️" "🧞" "🧞‍♀️" "🧞‍♂️")
+    local mythic_stars=("🪐" "🌎" "🌍" "🌌" "🌠")
+    
+    # Collection tracking (bash 3.2 compatible)
+    local common_count=0
+    local rare_count=0
+    local legendary_count=0
+    local mythic_count=0
+    
     local max_trail_length=999
     local cycle_count=0
     local trail_length=1
@@ -99,6 +120,45 @@ spin() {
     tput civis  # Hide cursor
     
     while true; do
+        # Star collection mini-game: Every tick, collect a trail star
+        ((collected_stars++))
+        
+        # Increase special star chances based on collected stars
+        if (( collected_stars % 10 == 0 )); then
+            rare_chance=$(echo "scale=2; $rare_chance + 0.5" | bc)
+            if (( collected_stars % 50 == 0 )); then
+                legendary_chance=$(echo "scale=2; $legendary_chance + 0.25" | bc)
+            fi
+            if (( collected_stars % 100 == 0 )); then
+                mythic_chance=$(echo "scale=2; $mythic_chance + 0.05" | bc)
+            fi
+        fi
+        
+        # Check for special star encounters
+        local random_val=$((RANDOM % 10000))
+        local special_star_found=""
+        local special_star_type=""
+        
+        if (( random_val < $(echo "$mythic_chance * 100" | bc | cut -d. -f1) )); then
+            # Mythic star found!
+            special_star_found="${mythic_stars[$((RANDOM % ${#mythic_stars[@]}))]}"
+            special_star_type="mythic"
+            ((mythic_count++))
+            ((special_stars_collected++))
+        elif (( random_val < $(echo "$legendary_chance * 100" | bc | cut -d. -f1) )); then
+            # Legendary star found!
+            special_star_found="${legendary_stars[$((RANDOM % ${#legendary_stars[@]}))]}"
+            special_star_type="legendary"
+            ((legendary_count++))
+            ((special_stars_collected++))
+        elif (( random_val < $(echo "$rare_chance * 100" | bc | cut -d. -f1) )); then
+            # Rare star found!
+            special_star_found="${rare_stars[$((RANDOM % ${#rare_stars[@]}))]}"
+            special_star_type="rare"
+            ((rare_count++))
+            ((special_stars_collected++))
+        fi
+        
         # Calculate current trail length - grows more dynamically
         if (( cycle_count > 0 && cycle_count % 8 == 0 )); then
             if (( trail_length < max_trail_length )); then
@@ -147,8 +207,42 @@ spin() {
             fi
         done
         
-        # Show the magnificent sparkling trail
-        printf "\r\033[K${display_trail} ${elapsed_display}"
+        # Build collection display
+        local collection_display=""
+        if (( collected_stars > 0 )); then
+            # Add regular stars collected
+            collection_display+=" ⭐${collected_stars}"
+            
+            # Add special stars if any collected
+            if (( rare_count > 0 )); then
+                collection_display+=" 🌟${rare_count}"
+            fi
+            if (( legendary_count > 0 )); then
+                collection_display+=" 🧚${legendary_count}"
+            fi
+            if (( mythic_count > 0 )); then
+                collection_display+=" 🪐${mythic_count}"
+            fi
+        fi
+        
+        # Show special star found notification
+        local special_notification=""
+        if [ -n "$special_star_found" ]; then
+            case $special_star_type in
+                "rare")
+                    special_notification=" \033[38;5;226m✨ RARE! ${special_star_found}\033[0m"
+                    ;;
+                "legendary")
+                    special_notification=" \033[38;5;201m💫 LEGENDARY! ${special_star_found}\033[0m"
+                    ;;
+                "mythic")
+                    special_notification=" \033[38;5;196m🌟 MYTHIC! ${special_star_found}\033[0m"
+                    ;;
+            esac
+        fi
+        
+        # Show the magnificent sparkling trail with collection stats
+        printf "\r\033[K${display_trail} ${elapsed_display}${collection_display}${special_notification}"
         sleep $delay
         ((cycle_count++))
     done
@@ -180,29 +274,9 @@ show_progress_with_spinner() {
     
     local step_start_time=$(date +%s)
     
-    if [ "$show_progress" == "true" ]; then
-        # Start spinner in background
-        spin &
-        SPINNER_PID=$!
-        
-        # Show initial progress line (will be updated by progress.js calls)
-        echo ""
-        echo "[████████░░] 0% | Initializing..."
-        
-        # Set up trap for cleanup
-        trap 'cleanup_spinner; exit 130' INT
-        
-        # Run the actual command
-        "$@"
-        local exit_code=$?
-        
-        # Clean up spinner
-        cleanup_spinner
-    else
-        # Simple execution without spinner for quick commands
-        "$@"
-        local exit_code=$?
-    fi
+    # Simple execution without spinner - sparkle animation disabled
+    "$@"
+    local exit_code=$?
     
     # Calculate completion time
     local step_end_time=$(date +%s)
@@ -222,7 +296,14 @@ show_progress_with_spinner() {
             echo -e "\033[31m[❌]\033[0m Failed (exit code: $exit_code)"
         fi
     fi
-    
+
+    # Sound effect for completion
+    if [ $exit_code -eq 0 ]; then
+        afplay /System/Library/Sounds/Glass.aiff
+    else
+        afplay /System/Library/Sounds/Basso.aiff
+    fi
+
     return $exit_code
 }
 
@@ -233,10 +314,22 @@ start_spinner() {
 
 
 ### Exit on Cmd+C / Ctrl+C
+# Global variable to track tick sound PID for cleanup
+TICK_PID=""
+
+cleanup_tick_sound() {
+    if [ -n "$TICK_PID" ]; then
+        kill $TICK_PID 2>/dev/null
+        wait $TICK_PID 2>/dev/null
+        TICK_PID=""
+    fi
+}
+
 # Enhanced trap handling to ensure proper cleanup on interruption
 handle_interrupt() {
 	echo -e "\n\x1B[33m[INTERRUPTED]: Script cancelled by user\x1B[0m"
 	cleanup_spinner
+	cleanup_tick_sound
 	exit 130
 }
 
@@ -396,12 +489,20 @@ bob_sha="$(cut -d ":" -f2 <<< "$bob_sha")"
 bob_channel="${bob_channel:-"stable"}"
 
 if $use_latest_bob; then
-	INFO=$(curl -s http://d.defold.com/${bob_channel}/info.json)
-	echo "Using latest bob: ${INFO}"
-	bob_sha=$(sed 's/.*sha1": "\(.*\)".*/\1/' <<< $INFO)
-	bob_version=$(sed 's/[^0-9.]*\([0-9.]*\).*/\1/' <<< $INFO)
-	bob_version="$(cut -d "." -f3 <<< "$bob_version")"
-fi
+        INFO=$(curl -s http://d.defold.com/${bob_channel}/info.json)
+        echo "Using latest bob: ${INFO}"
+        bob_sha=$(sed 's/.*sha1": "\(.*\)".*/\1/' <<< $INFO)
+        bob_version=$(sed 's/[^0-9.]*\([0-9.]*\).*/\1/' <<< $INFO)
+        bob_version="$(cut -d "." -f3 <<< "$bob_version")"
+    fi
+
+# Function to play tick sound
+play_tick_sound() {
+    while true; do
+        afplay /System/Library/Sounds/Morse.aiff
+        sleep 1
+    done
+}
 
 echo -e "Using Bob version \x1B[35m${bob_version}\x1B[0m SHA: \x1B[35m${bob_sha}\x1B[0m"
 
@@ -415,7 +516,7 @@ download_bob() {
 		echo "Unable to find bob${bob_version}.jar. Downloading it from d.defold.com: ${BOB_URL}}"
 	# Show progress for downloading Bob with enhanced display
 	echo "[🔽] Downloading Bob build tool..."
-	show_progress_with_spinner "Downloading Bob JAR file" "true" curl -L -o ${bob_path} ${BOB_URL}
+	curl -L -o ${bob_path} ${BOB_URL}
 	echo "[✅] Bob download complete"
 	fi
 }
@@ -477,7 +578,7 @@ write_report() {
 resolve_bob() {
 	# Show progress for library resolution with enhanced spinner
 	echo "[📦] Resolving project dependencies..."
-	show_progress_with_spinner "Resolving libraries and dependencies" "true" java -jar ${bob_path} --email foo@bar.com --auth 12345 resolve || try_fix_libraries
+	java -jar ${bob_path} --email foo@bar.com --auth 12345 resolve || try_fix_libraries
 	echo "[✅] Dependencies resolved"
 	echo ""
 }
@@ -509,15 +610,23 @@ bob() {
 		args+=" build bundle distclean"
 	fi
 
-	start_build_time=`date +%s`
+    start_build_time=`date +%s`
 
-	echo -e "Build command: ${args}"
-	echo "[🔨] Building project with Bob..."
-	echo "\n=== BUILD OUTPUT ==="
+    # Start tick sound in the background
+    play_tick_sound &
+    TICK_PID=$!
 
-	# Run the build command directly with live output
-	${args}
-	local build_exit_code=$?
+    echo -e "Build command: ${args}"
+    echo "[🔨] Building project with Bob..."
+    echo "\n=== BUILD OUTPUT ==="
+
+    # Run the build command with progress spinner
+    show_progress_with_spinner "Building with Bob" "true" ${args}
+    local build_exit_code=$?
+
+    # Stop the tick sound
+    kill $TICK_PID 2>/dev/null
+    wait $TICK_PID 2>/dev/null
 
 	echo "\n=== END BUILD OUTPUT ==="
 
@@ -1522,6 +1631,10 @@ fi
 settings_params="${settings_params} --settings ${version_settings_filename}"
 add_to_gitignore $version_settings_filename
 
+
+# Sound effect for start of deployer
+afplay /System/Library/Sounds/Bottle.aiff
+echo "[🚀] Starting deployer script..."
 
 ### Deployer run
 if $is_steam_upload && [ "${mode}" != "release" ]; then
