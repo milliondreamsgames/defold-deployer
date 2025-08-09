@@ -5,6 +5,11 @@ All notable changes to the Defold Deployer project will be documented in this fi
 ## [Unreleased]
 
 ### Added
+- **Steam Multi-Depot Support**: Enhanced Steam deployment capabilities
+  - Added support for multiple Steam depot IDs
+  - Improved handling of different build types
+  - Automatic ZIP file creation for release builds
+  - Better bundle ID handling for Android and iOS
 - **Enhanced Audio Feedback**: Added comprehensive audio feedback system during build processes
   - Tick sound (Morse.aiff) plays every second during Bob build process
   - Success sound (Glass.aiff) plays on successful operations
