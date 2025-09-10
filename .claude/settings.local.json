@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(afplay:*)",
+      "Bash(./test_spinner.sh:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -1,9 +1,11 @@
-#!/bin/bash
+#!/opt/homebrew/bin/bash
 ### Author: Insality <insality@gmail.com>, 04.2019
 ## (c) Insality Games
 ##
 ## Universal build && deploy script for Defold projects (Android, iOS, HTML5, Linux, MacOS, Windows)
 ## Deployer has own settings, described in separate file settings_deployer
+## Additional settings can be configured in deployer_settings.json:
+## - sound_enabled: true/false (default: false) - Enable/disable sound effects during build
 ## See full deployer settings here: https://github.com/Insality/defold-deployer/blob/master/settings_deployer.template
 ##
 ## Install:
@@ -47,9 +49,10 @@
 ###
 
 clean() {
-	# Clean up any running spinners and tick sounds first
+	# Clean up any running spinners, tick sounds, and audio playback first
 	cleanup_spinner
 	cleanup_tick_sound
+	cleanup_audio
 	
 	clean_build_settings
 
@@ -297,11 +300,13 @@ show_progress_with_spinner() {
         fi
     fi
 
-    # Sound effect for completion
-    if [ $exit_code -eq 0 ]; then
-        afplay /System/Library/Sounds/Glass.aiff
-    else
-        afplay /System/Library/Sounds/Basso.aiff
+# Sound effect for completion
+    if $sound_enabled; then
+        if [ $exit_code -eq 0 ]; then
+            afplay /System/Library/Sounds/Glass.aiff
+        else
+            afplay /System/Library/Sounds/Basso.aiff
+        fi
     fi
 
     return $exit_code
@@ -314,8 +319,9 @@ start_spinner() {
 
 
 ### Exit on Cmd+C / Ctrl+C
-# Global variable to track tick sound PID for cleanup
+# Global variables to track audio playback PIDs for cleanup
 TICK_PID=""
+AUDIO_PID=""
 
 cleanup_tick_sound() {
     if [ -n "$TICK_PID" ]; then
@@ -325,17 +331,27 @@ cleanup_tick_sound() {
     fi
 }
 
+cleanup_audio() {
+    if [ -n "$AUDIO_PID" ]; then
+        kill $AUDIO_PID 2>/dev/null
+        wait $AUDIO_PID 2>/dev/null
+        AUDIO_PID=""
+    fi
+}
+
 # Enhanced trap handling to ensure proper cleanup on interruption
 handle_interrupt() {
 	echo -e "\n\x1B[33m[INTERRUPTED]: Script cancelled by user\x1B[0m"
 	cleanup_spinner
 	cleanup_tick_sound
+	cleanup_audio
 	exit 130
 }
 
 trap handle_interrupt INT
 trap clean EXIT
-set -e
+# Remove set -e to prevent script exit on build failures
+# We'll handle errors explicitly in the build functions
 
 ### Early argument parsing for special commands that don't require game.project
 ios_device_preference_filename=".ios_device_preference"
@@ -381,6 +397,23 @@ settings_filename="settings_deployer"
 script_path="`dirname \"$0\"`"
 progress_script="${script_path}/progress.js"
 is_settings_exist=false
+
+# Load sound settings from deployer_settings.json
+sound_enabled=false
+if [ -f "./deployer_settings.json" ]; then
+    # Use jq to parse the JSON file if available, otherwise use grep as fallback
+    if command -v jq >/dev/null 2>&1; then
+        sound_setting=$(jq -r '.sound_enabled // false' ./deployer_settings.json 2>/dev/null)
+        if [ "$sound_setting" = "true" ]; then
+            sound_enabled=true
+        fi
+    else
+        # Fallback using grep if jq is not available
+        if grep -q '"sound_enabled":[[:space:]]*true' ./deployer_settings.json 2>/dev/null; then
+            sound_enabled=true
+        fi
+    fi
+fi
 
 if [ -f ${script_path}/${settings_filename} ]; then
 	is_settings_exist=true
@@ -465,6 +498,10 @@ is_build_success=false
 is_build_started=false
 build_time=false
 
+# Platform-specific build success tracking
+declare -A platform_build_success
+overall_build_success=true
+
 ### Game project settings for deployer script
 title=$(less game.project | grep "^title = " | cut -d "=" -f2 | sed -e 's/^[[:space:]]*//')
 version=$(less game.project | grep "^version = " | cut -d "=" -f2 | sed -e 's/^[[:space:]]*//')
@@ -501,6 +538,40 @@ play_tick_sound() {
     while true; do
         afplay /System/Library/Sounds/Morse.aiff
         sleep 1
+    done
+}
+
+# Function to play random audio from Downloads folder
+play_random_audio() {
+    local downloads_folder="$HOME/Downloads"
+    
+    # Find all audio files in Downloads folder
+    local audio_files=()
+    while IFS= read -r -d '' file; do
+        audio_files+=("$file")
+    done < <(find "$downloads_folder" -maxdepth 1 \( -iname "*.mp3" -o -iname "*.wav" -o -iname "*.m4a" -o -iname "*.aac" -o -iname "*.flac" -o -iname "*.ogg" -o -iname "*.aiff" -o -iname "*.mp4" \) -type f -print0 2>/dev/null)
+    
+    local num_files=${#audio_files[@]}
+    
+    if [ $num_files -eq 0 ]; then
+        echo "[🎵] No audio files found in Downloads folder, skipping background music"
+        return 0
+    fi
+    
+    # Select a random file
+    local random_index=$((RANDOM % num_files))
+    local selected_file="${audio_files[$random_index]}"
+    local file_name=$(basename "$selected_file")
+    
+    echo "[🎵] Playing background music: $file_name"
+    
+    # Play the audio file in a loop
+    while true; do
+        afplay "$selected_file" 2>/dev/null
+        # Check if we should continue (in case the file is short)
+        if [ -z "$AUDIO_PID" ]; then
+            break
+        fi
     done
 }
 
@@ -561,6 +632,7 @@ write_report() {
 	fi
 
 	if [ ! -f $build_stats_report_file ]; then
+		mkdir -p "$(dirname "$build_stats_report_file")"
 		touch $build_stats_report_file
 		echo -e "Create build report file: $build_stats_report_file"
 
@@ -612,9 +684,15 @@ bob() {
 
     start_build_time=`date +%s`
 
-    # Start tick sound in the background
-    play_tick_sound &
-    TICK_PID=$!
+    # Start random audio from Downloads folder in the background (DISABLED)
+    # play_random_audio &
+    # AUDIO_PID=$!
+    
+# Start tick sound in the background if enabled
+    if $sound_enabled; then
+        play_tick_sound &
+        TICK_PID=$!
+    fi
 
     echo -e "Build command: ${args}"
     echo "[🔨] Building project with Bob..."
@@ -624,9 +702,9 @@ bob() {
     show_progress_with_spinner "Building with Bob" "true" ${args}
     local build_exit_code=$?
 
-    # Stop the tick sound
-    kill $TICK_PID 2>/dev/null
-    wait $TICK_PID 2>/dev/null
+    # Stop the audio and tick sound
+    # cleanup_audio  # Disabled along with random audio
+    cleanup_tick_sound
 
 	echo "\n=== END BUILD OUTPUT ==="
 
@@ -634,11 +712,13 @@ bob() {
 		echo "[✅] Build process completed successfully"
 	else
 		echo "[❌] Build process FAILED with exit code: $build_exit_code"
+		# Return the exit code so build() function can handle the failure
 		return $build_exit_code
 	fi
 
 	build_time=$((`date +%s`-start_build_time))
 	echo -e "Build time: $build_time seconds\n"
+	return 0
 }
 
 
@@ -732,15 +812,31 @@ build() {
 			additional_params="$additional_params --settings $settings_android"
 		fi
 
-		bob ${mode} --platform ${platform} --bundle-format apk,aab --keystore ${android_keystore} \
+		if bob ${mode} --platform ${platform} --bundle-format apk,aab --keystore ${android_keystore} \
 			--keystore-pass ${android_keystore_password} \
-			--build-server ${build_server} ${additional_params}
+			--build-server ${build_server} ${additional_params}; then
+			echo "Bob build completed successfully for Android"
 
-		target_path="${platform_folder}/${filename}.apk"
-		mv "${line}.apk" ${target_path} && is_build_success=true
+			target_path="${platform_folder}/${filename}.apk"
+			if [ -f "${line}.apk" ]; then
+				mv "${line}.apk" ${target_path}
+				echo "Moved APK to: ${target_path}"
+				is_build_success=true
+			else
+				echo "Warning: APK file not found at ${line}.apk"
+			fi
 
-		rm -f "${platform_folder}/${filename}.aab"
-		mv "${line}.aab" "${platform_folder}/${filename}.aab" && is_build_success=true
+			rm -f "${platform_folder}/${filename}.aab"
+			if [ -f "${line}.aab" ]; then
+				mv "${line}.aab" "${platform_folder}/${filename}.aab"
+				echo "Moved AAB to: ${platform_folder}/${filename}.aab"
+			else
+				echo "Warning: AAB file not found at ${line}.aab"
+			fi
+		else
+			echo "Bob build failed for Android"
+			is_build_success=false
+		fi
 		export DEPLOYER_ARTIFACT_PATH="${target_path}"
 
 		#if [ ${mode} == "release" ]; then
@@ -766,50 +862,61 @@ build() {
 			additional_params="$additional_params --settings $settings_ios"
 		fi
 
-		bob ${mode} --platform ${platform} --architectures arm64-ios --identity ${ident} --mobileprovisioning ${prov} \
-			--build-server ${build_server} ${additional_params}
+		if bob ${mode} --platform ${platform} --architectures arm64-ios --identity ${ident} --mobileprovisioning ${prov} \
+			--build-server ${build_server} ${additional_params}; then
+			echo "Bob build completed successfully for iOS"
 
-		# Debug: Show what files were actually created
-		echo "Checking for build artifacts in ${dist_folder}..."
-		ls -la "${dist_folder}" || echo "dist folder not found"
-		echo "Looking for iOS artifacts with pattern: ${line}.*"
-		find "${dist_folder}" -name "${title}*" -type f 2>/dev/null || echo "No iOS artifacts found matching ${title}"
+			# Debug: Show what files were actually created
+			echo "Checking for build artifacts in ${dist_folder}..."
+			ls -la "${dist_folder}" || echo "dist folder not found"
+			echo "Looking for iOS artifacts with pattern: ${line}.*"
+			find "${dist_folder}" -name "${title}*" -type f 2/dev/null || echo "No iOS artifacts found matching ${title}"
 
-		target_path="${platform_folder}/${filename}.ipa"
-		rm -rf ${target_path}
-		
-		# Try to find and move the .ipa file
-		if [ -f "${line}.ipa" ]; then
-			echo "Found .ipa file: ${line}.ipa"
-			mv "${line}.ipa" ${target_path} && is_build_success=true
-		else
-			echo "Expected .ipa file not found at: ${line}.ipa"
-			# Try to find any .ipa file in the dist folder
-			ipa_file=$(find "${dist_folder}" -name "*.ipa" -type f | head -1)
-			if [ -n "$ipa_file" ]; then
-				echo "Found alternative .ipa file: $ipa_file"
-				mv "$ipa_file" ${target_path} && is_build_success=true
+			target_path="${platform_folder}/${filename}.ipa"
+			rm -rf ${target_path}
+
+			# Try to find and move the .ipa file
+			if [ -f "${line}.ipa" ]; then
+				echo "Found .ipa file: ${line}.ipa"
+				mv "${line}.ipa" ${target_path}
+				echo "Moved IPA to: ${target_path}"
+				is_build_success=true
 			else
-				echo "No .ipa file found in ${dist_folder}"
+				echo "Expected .ipa file not found at: ${line}.ipa"
+				# Try to find any .ipa file in the dist folder
+				ipa_file=$(find "${dist_folder}" -name "*.ipa" -type f | head -1)
+				if [ -n "$ipa_file" ]; then
+					echo "Found alternative .ipa file: $ipa_file"
+					mv "$ipa_file" ${target_path}
+					echo "Moved alternative IPA to: ${target_path}"
+					is_build_success=true
+				else
+					echo "No .ipa file found in ${dist_folder}"
+				fi
 			fi
-		fi
 
-		rm -rf "${platform_folder}/${filename}.app"
-		
-		# Try to find and move the .app file
-		if [ -d "${line}.app" ]; then
-			echo "Found .app bundle: ${line}.app"
-			mv "${line}.app" "${platform_folder}/${filename}.app"
-		else
-			echo "Expected .app bundle not found at: ${line}.app"
-			# Try to find any .app bundle in the dist folder
-			app_bundle=$(find "${dist_folder}" -name "*.app" -type d | head -1)
-			if [ -n "$app_bundle" ]; then
-				echo "Found alternative .app bundle: $app_bundle"
-				mv "$app_bundle" "${platform_folder}/${filename}.app"
+			rm -rf "${platform_folder}/${filename}.app"
+
+			# Try to find and move the .app file
+			if [ -d "${line}.app" ]; then
+				echo "Found .app bundle: ${line}.app"
+				mv "${line}.app" "${platform_folder}/${filename}.app"
+				echo "Moved APP to: ${platform_folder}/${filename}.app"
 			else
-				echo "No .app bundle found in ${dist_folder}"
+				echo "Expected .app bundle not found at: ${line}.app"
+				# Try to find any .app bundle in the dist folder
+				app_bundle=$(find "${dist_folder}" -name "*.app" -type d | head -1)
+				if [ -n "$app_bundle" ]; then
+					echo "Found alternative .app bundle: $app_bundle"
+					mv "$app_bundle" "${platform_folder}/${filename}.app"
+					echo "Moved alternative APP to: ${platform_folder}/${filename}.app"
+				else
+					echo "No .app bundle found in ${dist_folder}"
+				fi
 			fi
+		else
+			echo "Bob build failed for iOS"
+			is_build_success=false
 		fi
 
 		export DEPLOYER_ARTIFACT_PATH="${target_path}"
@@ -835,7 +942,7 @@ build() {
 		echo "Start build HTML5 ${mode}"
 		bob ${mode} --platform ${platform} --architectures js-web ${additional_params}
 
-		target_path="${platform_folder}/${filename}_html.zip"
+target_path="${platform_folder}/html_${filename}.zip"
 
 		rm -rf "${platform_folder}/${filename}_html"
 		rm -f "${target_path}"
@@ -843,7 +950,7 @@ build() {
 
 		previous_folder=`pwd`
 		cd "${platform_folder}"
-		zip "${filename}_html.zip" -r "${filename}_html" && is_build_success=true
+	zip "html_${filename}.zip" -r "${filename}_html" && is_build_success=true
 		cd "${previous_folder}"
 
 		export DEPLOYER_ARTIFACT_PATH="${target_path}"
@@ -959,6 +1066,8 @@ build() {
 
 	if $is_build_success; then
 		echo -e "\x1B[32mSave bundle at ${version_folder}/${filename}\x1B[0m"
+		# Track per-platform build success
+		platform_build_success["${platform}"]="true"
 		if [ -f ./${post_build_script} ]; then
 			echo "Run post-build script: $post_build_script"
 			source ./$post_build_script
@@ -974,6 +1083,9 @@ build() {
 		write_report ${platform} ${mode} ${target_path}
 	else
 		echo -e "\x1B[31mError during building...\x1B[0m"
+		# Track per-platform build failure
+		platform_build_success["${platform}"]="false"
+		overall_build_success=false
 	fi
 }
 
@@ -1347,7 +1459,7 @@ zip_release_build() {
 
     if [ ${platform} == ${macos_platform} ]; then
         # For Mac, zip the .app file
-        local zip_filename="${platform_folder}/${file_prefix_name}_${mode}_macos.zip"
+local zip_filename="${platform_folder}/macos_${file_prefix_name}_${mode}.zip"
         echo "Creating zip archive for macOS: ${zip_filename}"
 
         # Navigate to the directory containing the .app file
@@ -1358,7 +1470,7 @@ zip_release_build() {
         local app_name=$(basename "${target_path}")
 
         # Zip the .app file
-        zip -r "${file_prefix_name}_${mode}_macos.zip" "${app_name}" -x "*.DS_Store" -x "*/.*"
+        zip -r "macos_${file_prefix_name}_${mode}.zip" "${app_name}" -x "*.DS_Store" -x "*/.*"
 
         # Return to original directory
         cd "${current_dir}"
@@ -1368,7 +1480,7 @@ zip_release_build() {
 
     if [ ${platform} == ${windows_platform} ]; then
         # For Windows, zip all the contents inside the build folder
-        local zip_filename="${target_path}/${file_prefix_name}_${mode}_windows.zip"
+local zip_filename="${target_path}/windows_${file_prefix_name}_${mode}.zip"
         echo "Creating zip archive for Windows: ${zip_filename}"
 
         # Navigate to inside the Windows build folder
@@ -1376,7 +1488,7 @@ zip_release_build() {
         cd "${target_path}"
 
         # Zip all contents of the current directory
-        zip -r "${file_prefix_name}_${mode}_windows.zip" ./* -x "*.zip"
+        zip -r "windows_${file_prefix_name}_${mode}.zip" ./* -x "*.zip"
 
         # Return to original directory
         cd "${current_dir}"
@@ -1632,8 +1744,10 @@ settings_params="${settings_params} --settings ${version_settings_filename}"
 add_to_gitignore $version_settings_filename
 
 
-# Sound effect for start of deployer
-afplay /System/Library/Sounds/Bottle.aiff
+# Sound effect for start of deployer if enabled
+if $sound_enabled; then
+    afplay /System/Library/Sounds/Bottle.aiff
+fi
 echo "[🚀] Starting deployer script..."
 
 ### Deployer run
@@ -1642,96 +1756,133 @@ if $is_steam_upload && [ "${mode}" != "release" ]; then
     echo -e "\x1B[33mAdd 'r' to your command to enable release mode\x1B[0m"
 fi
 
-if $is_ios; then
-	if $is_build; then
+# Step 1: Build all requested platforms first
+echo -e "\n=== BUILD PHASE ==="
+
+# For debug builds, create a temporary settings file to add .debug suffix to package name
+if $is_android && [ "$mode" == "debug" ]; then
+	echo -e "\nAdding .debug suffix to Android package name for debug build"
+	# Create a temporary settings file to override the package name
+	echo "[android]
+package = ${bundle_id_android}.debug" > "settings_android_debug_temp.ini"
+	settings_params="${settings_params} --settings settings_android_debug_temp.ini"
+	# This file will be cleaned up when the script exits
+fi
+
+if $is_build; then
+	if $is_ios; then
 		echo -e "\nStart build on \x1B[36m${ios_platform}\x1B[0m"
 		build ${ios_platform} ${mode}
 	fi
 
-	if $is_deploy; then
-		echo "Start deploy project to device"
-		deploy ${ios_platform} ${mode}
-		echo "Waiting 3 seconds for device to settle after installation..."
-		sleep 3
-		run ${ios_platform} ${mode}
-	fi
-fi
-
-if $is_android; then
-	# For debug builds, create a temporary settings file to add .debug suffix to package name
-	if [ "$mode" == "debug" ]; then
-		echo -e "\nAdding .debug suffix to Android package name for debug build"
-		# Create a temporary settings file to override the package name
-		echo "[android]
-package = ${bundle_id_android}.debug" > "settings_android_debug_temp.ini"
-		settings_params="${settings_params} --settings settings_android_debug_temp.ini"
-		# This file will be cleaned up when the script exits
-	fi
-
-	if ! $is_android_instant; then
-		# Just build usual Android build
-		if $is_build; then
+	if $is_android; then
+		if ! $is_android_instant; then
+			# Just build usual Android build
 			echo -e "\nStart build on \x1B[34m${android_platform}\x1B[0m"
 			build ${android_platform} ${mode}
-		fi
-
-		if $is_deploy; then
-			echo "Start deploy project to device"
-			deploy ${android_platform} ${mode}
-			run ${android_platform} ${mode}
-		fi
-	else
-		# Build Android Instant APK
-		echo -e "\nStart build on \x1B[34m${android_platform} Instant APK\x1B[0m"
-		build ${android_platform} ${mode} "--settings ${android_instant_app_settings}"
-		make_instant ${mode}
-
-		if $is_deploy; then
-			echo "No autodeploy for Instant APK builds..."
+		else
+			# Build Android Instant APK
+			echo -e "\nStart build on \x1B[34m${android_platform} Instant APK\x1B[0m"
+			build ${android_platform} ${mode} "--settings ${android_instant_app_settings}"
+			make_instant ${mode}
 		fi
 	fi
-fi
 
-if $is_html; then
-	if $is_build; then
+	if $is_html; then
 		echo -e "\nStart build on \x1B[33m${html_platform}\x1B[0m"
 		build ${html_platform} ${mode}
 	fi
 
-	if $is_deploy; then
-		deploy ${html_platform} ${mode}
-	fi
-fi
-
-if $is_linux; then
-	if $is_build; then
+	if $is_linux; then
 		echo -e "\nStart build on \x1B[33m${linux_platform}\x1B[0m"
 		build ${linux_platform} ${mode}
 	fi
 
-	if $is_deploy; then
-		run ${linux_platform} ${mode}
-	fi
-fi
-
-if $is_macos; then
-	if $is_build; then
+	if $is_macos; then
 		echo -e "\nStart build on \x1B[33m${macos_platform}\x1B[0m"
 		build ${macos_platform} ${mode}
 	fi
 
-	if $is_deploy; then
-		run ${macos_platform} ${mode}
-	fi
-fi
-
-if $is_windows; then
-	if $is_build; then
+	if $is_windows; then
 		echo -e "\nStart build on \x1B[33m${windows_platform}\x1B[0m"
 		build ${windows_platform} ${mode}
 	fi
 
-	if $is_deploy; then
-		run ${windows_platform} ${mode}
+	# Show build summary
+	echo -e "\n=== BUILD SUMMARY ==="
+	if $overall_build_success; then
+		echo -e "\x1B[32m✅ All builds completed successfully!\x1B[0m"
+	else
+		echo -e "\x1B[31m❌ Some builds failed:\x1B[0m"
+		for platform in "${!platform_build_success[@]}"; do
+			if [ "${platform_build_success[$platform]}" == "false" ]; then
+				echo -e "\x1B[31m  - $platform: FAILED\x1B[0m"
+			else
+				echo -e "\x1B[32m  - $platform: SUCCESS\x1B[0m"
+			fi
+		done
+	fi
+fi
+
+# Step 2: Deploy/run only for successfully built platforms
+if $is_deploy; then
+	echo -e "\n=== DEPLOY PHASE ==="
+	
+	if $is_ios; then
+		if [ "${platform_build_success[${ios_platform}]}" == "true" ] || ! $is_build; then
+			echo "Start deploy iOS to device"
+			deploy ${ios_platform} ${mode}
+			echo "Waiting 3 seconds for device to settle after installation..."
+			sleep 3
+			run ${ios_platform} ${mode}
+		else
+			echo -e "\x1B[33m[SKIP]: iOS deployment skipped due to build failure\x1B[0m"
+		fi
+	fi
+
+	if $is_android; then
+		if [ "${platform_build_success[${android_platform}]}" == "true" ] || ! $is_build; then
+			if ! $is_android_instant; then
+				echo "Start deploy Android to device"
+				deploy ${android_platform} ${mode}
+				run ${android_platform} ${mode}
+			else
+				echo "No autodeploy for Instant APK builds..."
+			fi
+		else
+			echo -e "\x1B[33m[SKIP]: Android deployment skipped due to build failure\x1B[0m"
+		fi
+	fi
+
+	if $is_html; then
+		if [ "${platform_build_success[${html_platform}]}" == "true" ] || ! $is_build; then
+			deploy ${html_platform} ${mode}
+		else
+			echo -e "\x1B[33m[SKIP]: HTML5 deployment skipped due to build failure\x1B[0m"
+		fi
+	fi
+
+	if $is_linux; then
+		if [ "${platform_build_success[${linux_platform}]}" == "true" ] || ! $is_build; then
+			run ${linux_platform} ${mode}
+		else
+			echo -e "\x1B[33m[SKIP]: Linux run skipped due to build failure\x1B[0m"
+		fi
+	fi
+
+	if $is_macos; then
+		if [ "${platform_build_success[${macos_platform}]}" == "true" ] || ! $is_build; then
+			run ${macos_platform} ${mode}
+		else
+			echo -e "\x1B[33m[SKIP]: MacOS run skipped due to build failure\x1B[0m"
+		fi
+	fi
+
+	if $is_windows; then
+		if [ "${platform_build_success[${windows_platform}]}" == "true" ] || ! $is_build; then
+			run ${windows_platform} ${mode}
+		else
+			echo -e "\x1B[33m[SKIP]: Windows run skipped due to build failure\x1B[0m"
+		fi
 	fi
 fi
