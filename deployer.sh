@@ -6,6 +6,7 @@
 ## Deployer has own settings, described in separate file settings_deployer
 ## Additional settings can be configured in deployer_settings.json:
 ## - sound_enabled: true/false (default: false) - Enable/disable sound effects during build
+## - auto_open_web_console: true/false (default: false) - Auto-open web console in browser when deploying
 ## See full deployer settings here: https://github.com/Insality/defold-deployer/blob/master/settings_deployer.template
 ##
 ## Install:
@@ -53,6 +54,7 @@ clean() {
 	cleanup_spinner
 	cleanup_tick_sound
 	cleanup_audio
+	cleanup_vibery_console
 	
 	clean_build_settings
 
@@ -339,6 +341,24 @@ cleanup_audio() {
     fi
 }
 
+cleanup_vibery_console() {
+    if [ -f "$vibery_console_pid_file" ]; then
+        local console_pid=$(cat "$vibery_console_pid_file")
+        if kill -0 "$console_pid" 2>/dev/null; then
+            echo "[🛑] Stopping Vibery web console (PID: $console_pid)..."
+            kill $console_pid 2>/dev/null
+            # Give it time to shut down gracefully
+            sleep 1
+            # Force kill if still running
+            if kill -0 "$console_pid" 2>/dev/null; then
+                kill -9 $console_pid 2>/dev/null
+            fi
+        fi
+        rm -f "$vibery_console_pid_file"
+        rm -f "/tmp/vibery_console.log"
+    fi
+}
+
 # Enhanced trap handling to ensure proper cleanup on interruption
 handle_interrupt() {
 	echo -e "\n\x1B[33m[INTERRUPTED]: Script cancelled by user\x1B[0m"
@@ -385,6 +405,46 @@ is_build_html_report=false
 enable_incremental_version=false
 enable_incremental_android_version_code=false
 is_steam_upload=false
+
+### Vibery Web Console variables
+vibery_console_dir="/Users/charliehelman/vibery/vibery-web-console/defold-web-console"
+vibery_console_url="http://localhost:3000"
+vibery_console_pid_file="/tmp/vibery_console.pid"
+
+### Claude Code Monitoring Integration (Phase 2)
+# Environment variable control - monitoring disabled by default to preserve existing workflow
+CLAUDE_MONITORING_ENABLED=${CLAUDE_MONITORING_ENABLED:-false}
+claude_monitor_script="./claude-log-monitor.sh"
+
+# Claude monitoring helper functions
+claude_monitor_build_start() {
+	if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
+		echo "[ENGINE] [FEATURE] Build phase started for $1 $2 mode"
+		"$claude_monitor_script" build_start "$1" "$2" 2>/dev/null || true
+	fi
+}
+
+claude_monitor_build_end() {
+	if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
+		echo "[ENGINE] [FEATURE] Build phase completed for $1 $2 mode (exit code: $3)"
+		"$claude_monitor_script" build_end "$1" "$2" "$3" 2>/dev/null || true
+	fi
+}
+
+claude_monitor_deploy_start() {
+	if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
+		echo "[ENGINE] [FEATURE] Deploy phase started for $1 $2 mode"
+		"$claude_monitor_script" deploy_start "$1" "$2" 2>/dev/null || true
+	fi
+}
+
+claude_monitor_stream_logs() {
+	if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
+		echo "[ENGINE] [FEATURE] Starting log stream for $1"
+		"$claude_monitor_script" stream_logs "$1" 2>/dev/null || true
+	fi
+}
+
 steam_app_id=""
 steam_depot_id=""
 steam_depot_id_windows=""
@@ -400,6 +460,7 @@ is_settings_exist=false
 
 # Load sound settings from deployer_settings.json
 sound_enabled=false
+auto_open_web_console=false  # Default to false - user must explicitly enable
 if [ -f "./deployer_settings.json" ]; then
     # Use jq to parse the JSON file if available, otherwise use grep as fallback
     if command -v jq >/dev/null 2>&1; then
@@ -407,10 +468,21 @@ if [ -f "./deployer_settings.json" ]; then
         if [ "$sound_setting" = "true" ]; then
             sound_enabled=true
         fi
+
+        # Load auto_open_web_console setting
+        auto_open_setting=$(jq -r '.auto_open_web_console // false' ./deployer_settings.json 2>/dev/null)
+        if [ "$auto_open_setting" = "true" ]; then
+            auto_open_web_console=true
+        fi
     else
         # Fallback using grep if jq is not available
         if grep -q '"sound_enabled":[[:space:]]*true' ./deployer_settings.json 2>/dev/null; then
             sound_enabled=true
+        fi
+
+        # Fallback for auto_open_web_console setting
+        if grep -q '"auto_open_web_console":[[:space:]]*true' ./deployer_settings.json 2>/dev/null; then
+            auto_open_web_console=true
         fi
     fi
 fi
@@ -698,9 +770,18 @@ bob() {
     echo "[🔨] Building project with Bob..."
     echo "\n=== BUILD OUTPUT ==="
 
-    # Run the build command with progress spinner
-    show_progress_with_spinner "Building with Bob" "true" ${args}
-    local build_exit_code=$?
+    # Run the build command with progress spinner and Claude integration
+    if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
+        echo "[ENGINE] [FEATURE] Enhanced build execution with Claude log streaming"
+        show_progress_with_spinner "Building with Bob" "true" ${args} 2>&1 | \
+            tee >(while IFS= read -r line; do 
+                "$claude_monitor_script" process_logs "$platform" <<< "$line" 2>/dev/null || true
+            done)
+        local build_exit_code=${PIPESTATUS[0]}
+    else
+        show_progress_with_spinner "Building with Bob" "true" ${args}
+        local build_exit_code=$?
+    fi
 
     # Stop the audio and tick sound
     # cleanup_audio  # Disabled along with random audio
@@ -712,6 +793,13 @@ bob() {
 		echo "[✅] Build process completed successfully"
 	else
 		echo "[❌] Build process FAILED with exit code: $build_exit_code"
+		
+		# Trigger Claude troubleshooting analysis if monitoring is enabled
+		if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
+			echo "[ENGINE] [FEATURE] Triggering automated troubleshooting analysis"
+			"$claude_monitor_script" analyze_error "$build_exit_code" 2>/dev/null || true
+		fi
+		
 		# Return the exit code so build() function can handle the failure
 		return $build_exit_code
 	fi
@@ -738,6 +826,9 @@ build() {
 	additional_params="${build_params} ${settings_params} $3"
 	is_build_success=false
 	is_build_started=true
+
+	# Claude monitoring: Signal build start
+	claude_monitor_build_start "$platform" "$mode"
 
 	if [ ${mode} == "release" ]; then
 		ident=${ios_identity_dist}
@@ -1081,11 +1172,17 @@ target_path="${platform_folder}/html_${filename}.zip"
 		fi
 
 		write_report ${platform} ${mode} ${target_path}
+		
+		# Claude monitoring: Signal successful build completion
+		claude_monitor_build_end "$platform" "$mode" "0"
 	else
 		echo -e "\x1B[31mError during building...\x1B[0m"
 		# Track per-platform build failure
 		platform_build_success["${platform}"]="false"
 		overall_build_success=false
+		
+		# Claude monitoring: Signal failed build completion
+		claude_monitor_build_end "$platform" "$mode" "1"
 	fi
 }
 
@@ -1109,6 +1206,9 @@ deploy() {
 	platform=$1
 	mode=$2
 	clean_build_settings
+
+	# Claude monitoring: Signal deploy start
+	claude_monitor_deploy_start "$platform" "$mode"
 
 	platform_folder="${version_folder}/${platform}"
 
@@ -1146,9 +1246,17 @@ deploy() {
 
 	if [ ${platform} == ${html_platform} ]; then
 		filename="${platform_folder}/${file_prefix_name}_${mode}_html/"
-		echo "Start python server and open in browser ${filename:1}"
+		echo "Start python server ${filename:1}"
 
-		open "http://localhost:8000${filename:1}"
+		# Only open browser if auto_open_web_console is enabled
+		if [ "$auto_open_web_console" = true ]; then
+			echo "[🌍] Auto-opening web console in browser..."
+			open "http://localhost:8000${filename:1}"
+		else
+			echo "[📝] Web server starting at: http://localhost:8000${filename:1}"
+			echo "[📝] Auto-open disabled. To enable, set 'auto_open_web_console': true in deployer_settings.json"
+		fi
+
 		python3 --version
 		python3 -m "http.server"
 	fi
@@ -1176,7 +1284,14 @@ run() {
 			echo "Using debug package name: ${app_package_id}"
 		fi
 		adb shell am start -n ${app_package_id}/com.dynamo.android.DefoldActivity
-		adb logcat -s defold
+		
+		# Claude monitoring: Start log streaming if enabled, otherwise normal logcat
+		claude_monitor_stream_logs "android"
+		if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
+			adb logcat -s defold | tee >( "$claude_monitor_script" process_logs "android" )
+		else
+			adb logcat -s defold
+		fi
 	fi
 
 	if [ ${platform} == ${ios_platform} ]; then
@@ -1197,8 +1312,16 @@ run() {
 		echo "Launching app on device ${device_id}..."
 
 		echo "Using console mode..."
-		launch_ios_app_with_console "$device_id" "$bundle_id_ios"
-		launch_status=$?
+		
+		# Claude monitoring: Start log streaming if enabled, otherwise normal console
+		claude_monitor_stream_logs "ios"
+		if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
+			launch_ios_app_with_console "$device_id" "$bundle_id_ios" | tee >( "$claude_monitor_script" process_logs "ios" )
+			launch_status=${PIPESTATUS[0]}
+		else
+			launch_ios_app_with_console "$device_id" "$bundle_id_ios"
+			launch_status=$?
+		fi
 
 		if [ $launch_status -ne 0 ]; then
 			echo -e "\x1B[33m[WARNING]: devicectl console launch failed, trying ios-deploy as fallback...\x1B[0m"
@@ -1749,6 +1872,78 @@ if $sound_enabled; then
     afplay /System/Library/Sounds/Bottle.aiff
 fi
 echo "[🚀] Starting deployer script..."
+
+### Start Vibery Web Console
+start_vibery_console() {
+    echo "[🌐] Starting Vibery web console..."
+
+    local console_was_already_running=false
+
+    # Check if console is already running
+    if [ -f "$vibery_console_pid_file" ]; then
+        local existing_pid=$(cat "$vibery_console_pid_file")
+        if kill -0 "$existing_pid" 2>/dev/null; then
+            echo "[ℹ️] Vibery console already running at $vibery_console_url (PID: $existing_pid)"
+            console_was_already_running=true
+        else
+            # Remove stale PID file
+            rm -f "$vibery_console_pid_file"
+        fi
+    fi
+
+    # Start the console if directory exists and not already running
+    if [ -d "$vibery_console_dir" ] && [ "$console_was_already_running" = false ]; then
+        echo "[🚀] Starting web console from: $vibery_console_dir"
+        cd "$vibery_console_dir"
+
+        # Start in background and save PID
+        nohup npm run dev > /tmp/vibery_console.log 2>&1 &
+        local console_pid=$!
+        echo "$console_pid" > "$vibery_console_pid_file"
+
+        echo "[✅] Vibery console started (PID: $console_pid)"
+        echo "[🌐] Console available at: $vibery_console_url"
+
+        # Give the server time to start up
+        sleep 3
+
+        # Return to original directory
+        cd - > /dev/null
+    elif [ ! -d "$vibery_console_dir" ]; then
+        echo "[⚠️] Warning: Vibery console directory not found at $vibery_console_dir"
+        echo "[ℹ️] Continuing deployment without web console..."
+        return 1
+    fi
+
+    # Auto-open web console in browser if enabled
+    if [ "$auto_open_web_console" = true ]; then
+        echo "[🌍] Auto-opening web console in browser..."
+
+        # Check if the console is responding before opening browser
+        local max_attempts=10
+        local attempt=1
+        while [ $attempt -le $max_attempts ]; do
+            if curl -s --connect-timeout 1 "$vibery_console_url" > /dev/null 2>&1; then
+                echo "[🚀] Opening $vibery_console_url in default browser..."
+                open "$vibery_console_url"
+                break
+            else
+                echo "[⏳] Waiting for web console to be ready... (attempt $attempt/$max_attempts)"
+                sleep 1
+                ((attempt++))
+            fi
+        done
+
+        if [ $attempt -gt $max_attempts ]; then
+            echo "[⚠️] Web console didn't respond in time, but you can manually open: $vibery_console_url"
+        fi
+    else
+        echo "[ℹ️] Auto-open disabled. Manually open: $vibery_console_url"
+    fi
+}
+
+# Start the web console before deployment
+start_vibery_console
 
 ### Deployer run
 if $is_steam_upload && [ "${mode}" != "release" ]; then

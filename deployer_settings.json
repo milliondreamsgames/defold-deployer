@@ -1,3 +1,4 @@
 {
-  "sound_enabled": true
+  "sound_enabled": true,
+  "auto_open_web_console": false
 }
