@@ -1,0 +1,25 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Project Housekeeping",
+        "description": "Clean up and separate unrelated changes, get everything committed to git locally and prepare PR",
+        "details": "This includes organizing files, reviewing uncommitted changes, staging appropriate files, creating logical commits, and preparing for pull request submission.",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "version": "1.0",
+      "createdAt": "2024-09-13T21:01:00.000Z",
+      "lastModified": "2024-09-13T21:01:00.000Z",
+      "created": "2025-09-13T21:02:12.626Z",
+      "description": "Tasks for master context",
+      "updated": "2025-09-13T21:02:12.626Z"
+    }
+  }
+}

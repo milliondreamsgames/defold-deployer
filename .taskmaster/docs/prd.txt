@@ -1,0 +1,140 @@
+Claude Code Automated Log Monitoring for Defold Deployer
+
+OVERVIEW
+Implement a comprehensive Claude Code automated log monitoring system that transforms the Defold deployer from reactive debugging to proactive intelligence. The system monitors build and deployment processes in real-time, provides intelligent error analysis, automated troubleshooting suggestions, and team integration.
+
+OBJECTIVES
+1. Real-time monitoring of build and deployment processes
+2. Intelligent error detection and classification
+3. Automated troubleshooting suggestions and recovery mechanisms  
+4. Team integration with webhook notifications
+5. Knowledge sharing and pattern learning across builds
+6. Minimal disruption to existing workflow
+
+CORE COMPONENTS
+
+Session Management System
+- claude-log-monitor.sh script with session lifecycle management
+- JSON metadata for session tracking and recovery
+- Context checkpointing every 5 minutes
+- Named pipe communication between processes
+- Resource cleanup and error handling
+
+Deployer Integration
+- Environment variable controls for enabling monitoring
+- Build phase hooks without disrupting existing workflow
+- Log streaming to Claude with structured output
+- Platform detection and context awareness
+- Backward compatibility maintenance
+
+Enhanced Progress System
+- Error pattern recognition during builds
+- Real-time visual feedback for detected issues
+- Performance monitoring with threshold alerts
+- Structured JSON logging for Claude consumption
+- Color-coded indicators for different issue types
+
+Team Integration
+- Webhook notifications for Slack/Discord
+- Smart alerting for critical issues only
+- Rich notification format with analysis and suggestions
+- Rate limiting to prevent notification spam
+- Shared knowledge base for resolved issues
+
+TECHNICAL REQUIREMENTS
+
+Core Logic (Phase 1)
+- Robust shell scripting with proper error handling
+- Session management with start/stop/resume capabilities
+- Configuration system with JSON-based settings
+- Unit test coverage for all core functions
+- Process management with cleanup on termination
+
+Engine Integration (Phase 2)
+- Minimal modifications to existing deployer.sh
+- Real-time log streaming without performance impact
+- Platform-specific monitoring (Android, iOS, HTML5, Linux, macOS, Windows)
+- Build failure detection and automated response
+- Message passing system between scripts
+
+Data-Driven UI (Phase 3)
+- Enhanced progress.js with error pattern detection
+- Visual indicators for different issue severities
+- Performance metrics tracking and alerts
+- JSON-structured logging for AI analysis
+- Real-time feedback without impacting build speed
+
+Player Experience (Phase 4)
+- User-friendly notifications and suggestions
+- Automated recovery mechanisms for common issues
+- Context-aware help messages
+- Graceful degradation when Claude unavailable
+- Terminal-based assistance during builds
+
+Production Readiness (Phase 5)
+- Comprehensive documentation and examples
+- Performance optimization and tuning
+- Security review and hardening
+- Team training and validation
+- Production deployment preparation
+
+VALIDATION CRITERIA
+
+Phase 1: Core Logic Foundation
+- All unit tests pass with 100% core function coverage
+- Session management works reliably
+- Configuration system validates properly
+- Named pipe communication functions correctly
+- Error scenarios handled gracefully
+
+Phase 2: Engine Integration
+- Existing deployer functionality unchanged when monitoring disabled
+- Monitoring activates correctly with environment variable
+- Build logs stream to Claude in real-time
+- All platform builds work without regression
+- Failed builds trigger automated troubleshooting
+
+Phase 3: Data-Driven UI Enhancement
+- Error patterns detected automatically during builds
+- Visual feedback shows appropriate indicators
+- Claude receives properly formatted JSON logs
+- Performance monitoring triggers alerts appropriately
+- No performance impact on build process
+
+Phase 4: Player Experience & Team Integration
+- Webhook notifications sent for critical issues
+- Team receives actionable alerts in communication channels
+- Users get immediate help for common problems
+- Recovery mechanisms reduce build failure rates
+- Knowledge base grows with resolved issues
+
+Phase 5: Backstage Demo & Production Readiness
+- Full system demonstration successful
+- All documentation complete and reviewed
+- Team trained and comfortable with system
+- Performance meets or exceeds targets
+- Ready for production deployment
+
+SUCCESS METRICS
+- Build failure resolution time reduced by 50%
+- Developer learning curve accelerated for issue understanding
+- Automated knowledge capture and sharing
+- System reliability of 99% uptime with graceful degradation
+- Zero impact on existing workflow when disabled
+
+CONSTRAINTS
+- Must maintain backward compatibility
+- No performance impact on build times
+- Graceful degradation without Claude
+- Minimal dependencies on external services
+- Easy disable/removal capability
+- Context budget management for Claude integration
+
+DELIVERABLES
+- claude-log-monitor.sh with complete session management
+- deployer-with-claude.sh wrapper script
+- Enhanced progress.js with error detection
+- Webhook integration modules
+- Comprehensive test suite
+- Complete documentation package
+- Team training materials
