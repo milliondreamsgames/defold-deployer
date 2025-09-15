@@ -3,9 +3,35 @@
     "allow": [
       "Bash(afplay:*)",
       "Bash(./test_spinner.sh:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "mcp__fibery-mcp-server__list_databases",
+      "mcp__fibery-mcp-server__query_database",
+      "Bash(mkdir:*)",
+      "WebSearch",
+      "Bash(task-master init:*)",
+      "Bash(printf \"Y\\nN\\n\")",
+      "Bash(find:*)",
+      "Bash(task-master list:*)",
+      "Bash(task-master parse-prd:*)",
+      "Bash(chmod:*)",
+      "Bash(./test-claude-monitor.sh:*)",
+      "Bash(./claude-log-monitor.sh:*)",
+      "Bash(timeout:*)",
+      "Bash(xargs:*)",
+      "Bash(./deployer-with-claude.sh)",
+      "Bash(node:*)",
+      "Bash(./test-phase5-validation.sh:*)",
+      "Bash(cat:*)",
+      "mcp__task-master-ai__add_task",
+      "mcp__task-master-ai__get_tasks",
+      "mcp__task-master-ai__initialize_project"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "task-master-ai"
+  ]
 }
