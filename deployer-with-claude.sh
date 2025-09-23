@@ -55,65 +55,57 @@ setup_environment() {
     fi
     
     # Platform detection
-    local platform_count=0
+    local -i platform_count=0
     local platforms_detected=()
-    
+
     for arg in "$@"; do
-        if [[ "$arg" =~ [a] ]]; then
-            platforms_detected+=("Android")
-            ((platform_count++))
-        fi
-        if [[ "$arg" =~ [i] ]]; then
-            platforms_detected+=("iOS") 
-            ((platform_count++))
-        fi
-        if [[ "$arg" =~ [h] ]]; then
-            platforms_detected+=("HTML5")
-            ((platform_count++))
-        fi
-        if [[ "$arg" =~ [w] ]]; then
-            platforms_detected+=("Windows")
-            ((platform_count++))
-        fi
-        if [[ "$arg" =~ [l] ]]; then
-            platforms_detected+=("Linux")
-            ((platform_count++))
-        fi
-        if [[ "$arg" =~ [m] ]]; then
-            platforms_detected+=("macOS")
-            ((platform_count++))
-        fi
+        case "$arg" in
+            *a*) platforms_detected+=("Android"); platform_count=$((platform_count+1)) ;;
+        esac
+        case "$arg" in
+            *i*) platforms_detected+=("iOS"); platform_count=$((platform_count+1)) ;;
+        esac
+        case "$arg" in
+            *h*) platforms_detected+=("HTML5"); platform_count=$((platform_count+1)) ;;
+        esac
+        case "$arg" in
+            *w*) platforms_detected+=("Windows"); platform_count=$((platform_count+1)) ;;
+        esac
+        case "$arg" in
+            *l*) platforms_detected+=("Linux"); platform_count=$((platform_count+1)) ;;
+        esac
+        case "$arg" in
+            *m*) platforms_detected+=("macOS"); platform_count=$((platform_count+1)) ;;
+        esac
     done
     
     if [ $platform_count -eq 0 ]; then
         log_engine "No platforms detected in arguments - running deployer with current args"
     else
-        log_engine "Target platforms detected: ${platforms_detected[*]}"
+        log_engine "Target platforms detected: ${platforms_detected[@]}"
         log_engine "Platform count: $platform_count"
     fi
     
     # Mode detection
     local mode="debug"
-    if [[ "$*" =~ r ]]; then
-        mode="release"
-    fi
-    if [[ "$*" =~ --headless ]]; then
-        mode="headless"
-    fi
+    case "$*" in
+        *r*) mode="release" ;;
+    esac
+    case "$*" in
+        *--headless*) mode="headless" ;;
+    esac
     log_engine "Build mode detected: $mode"
-    
+
     # Check for build and deploy flags
     local is_build=false
     local is_deploy=false
-    if [[ "$*" =~ b ]]; then
-        is_build=true
-        log_engine "Build phase will be executed"
-    fi
-    if [[ "$*" =~ d ]]; then
-        is_deploy=true
-        log_engine "Deploy phase will be executed"
-    fi
-    
+    case "$*" in
+        *b*) is_build=true; log_engine "Build phase will be executed" ;;
+    esac
+    case "$*" in
+        *d*) is_deploy=true; log_engine "Deploy phase will be executed" ;;
+    esac
+
     return 0
 }
 

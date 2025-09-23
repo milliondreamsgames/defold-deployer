@@ -407,8 +407,8 @@ enable_incremental_android_version_code=false
 is_steam_upload=false
 
 ### Vibery Web Console variables
-vibery_console_dir="/Users/charliehelman/vibery/vibery-web-console/defold-web-console"
-vibery_console_url="http://localhost:3000"
+# vibery_console_dir and vibery_console_url are loaded from settings_deployer
+# Default values will be used if not configured
 vibery_console_pid_file="/tmp/vibery_console.pid"
 
 ### Claude Code Monitoring Integration (Phase 2)
@@ -1875,6 +1875,12 @@ echo "[🚀] Starting deployer script..."
 
 ### Start Vibery Web Console
 start_vibery_console() {
+    # Check if Vibery console is configured and enabled
+    if [ -z "$vibery_console_dir" ]; then
+        echo "[ℹ️] Vibery web console is disabled (not configured in settings)"
+        return 1
+    fi
+
     echo "[🌐] Starting Vibery web console..."
 
     local console_was_already_running=false
@@ -1911,6 +1917,7 @@ start_vibery_console() {
         cd - > /dev/null
     elif [ ! -d "$vibery_console_dir" ]; then
         echo "[⚠️] Warning: Vibery console directory not found at $vibery_console_dir"
+        echo "[ℹ️] To disable this warning, leave vibery_console_dir empty in settings_deployer"
         echo "[ℹ️] Continuing deployment without web console..."
         return 1
     fi
