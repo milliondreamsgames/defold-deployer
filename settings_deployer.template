@@ -59,6 +59,11 @@ enable_incremental_version=false
 # Use git commits count as android.version_code on build
 enable_incremental_android_version_code=false
 
+# Hard-coded android.version_code to use on build (only when enable_incremental_android_version_code=false)
+# If set, this value will be used instead of parsing version_code from game.project
+# Leave empty ("") to use game.project value
+hard_coded_bundle_version_code=""
+
 # Local resource cache folder for deployer script. This folder will be added to gitignore if exists
 resource_cache_local=".deployer_cache"
 
