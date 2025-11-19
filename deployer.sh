@@ -110,40 +110,6 @@ enable_incremental_version=false
 enable_incremental_android_version_code=false
 is_steam_upload=false
 
-### Claude Code Monitoring Integration (Phase 2)
-# Environment variable control - monitoring disabled by default to preserve existing workflow
-CLAUDE_MONITORING_ENABLED=${CLAUDE_MONITORING_ENABLED:-false}
-claude_monitor_script="./claude-log-monitor.sh"
-
-# Claude monitoring helper functions
-claude_monitor_build_start() {
-	if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
-		echo "[ENGINE] [FEATURE] Build phase started for $1 $2 mode"
-		"$claude_monitor_script" build_start "$1" "$2" 2>/dev/null || true
-	fi
-}
-
-claude_monitor_build_end() {
-	if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
-		echo "[ENGINE] [FEATURE] Build phase completed for $1 $2 mode (exit code: $3)"
-		"$claude_monitor_script" build_end "$1" "$2" "$3" 2>/dev/null || true
-	fi
-}
-
-claude_monitor_deploy_start() {
-	if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
-		echo "[ENGINE] [FEATURE] Deploy phase started for $1 $2 mode"
-		"$claude_monitor_script" deploy_start "$1" "$2" 2>/dev/null || true
-	fi
-}
-
-claude_monitor_stream_logs() {
-	if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
-		echo "[ENGINE] [FEATURE] Starting log stream for $1"
-		"$claude_monitor_script" stream_logs "$1" 2>/dev/null || true
-	fi
-}
-
 steam_app_id=""
 steam_depot_id=""
 steam_depot_id_windows=""
@@ -404,18 +370,8 @@ bob() {
     echo "[🔨] Building project with Bob..."
     echo "\n=== BUILD OUTPUT ==="
 
-    # Run the build command with Claude integration if enabled
-    if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
-        echo "[ENGINE] [FEATURE] Enhanced build execution with Claude log streaming"
-        ${args} 2>&1 | \
-            tee >(while IFS= read -r line; do
-                "$claude_monitor_script" process_logs "$platform" <<< "$line" 2>/dev/null || true
-            done)
-        local build_exit_code=${PIPESTATUS[0]}
-    else
-        ${args}
-        local build_exit_code=$?
-    fi
+    ${args}
+    local build_exit_code=$?
 
 	echo "\n=== END BUILD OUTPUT ==="
 
@@ -423,14 +379,6 @@ bob() {
 		echo "[✅] Build process completed successfully"
 	else
 		echo "[❌] Build process FAILED with exit code: $build_exit_code"
-
-		# Trigger Claude troubleshooting analysis if monitoring is enabled
-		if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
-			echo "[ENGINE] [FEATURE] Triggering automated troubleshooting analysis"
-			"$claude_monitor_script" analyze_error "$build_exit_code" 2>/dev/null || true
-		fi
-
-		# Return the exit code so build() function can handle the failure
 		return $build_exit_code
 	fi
 
@@ -456,9 +404,6 @@ build() {
 	additional_params="${build_params} ${settings_params} $3"
 	is_build_success=false
 	is_build_started=true
-
-	# Claude monitoring: Signal build start
-	claude_monitor_build_start "$platform" "$mode"
 
 	if [ ${mode} == "release" ]; then
 		ident=${ios_identity_dist}
@@ -802,17 +747,11 @@ target_path="${platform_folder}/html_${filename}.zip"
 		fi
 
 		write_report ${platform} ${mode} ${target_path}
-		
-		# Claude monitoring: Signal successful build completion
-		claude_monitor_build_end "$platform" "$mode" "0"
 	else
 		echo -e "\x1B[31mError during building...\x1B[0m"
 		# Track per-platform build failure
 		platform_build_success["${platform}"]="false"
 		overall_build_success=false
-		
-		# Claude monitoring: Signal failed build completion
-		claude_monitor_build_end "$platform" "$mode" "1"
 	fi
 }
 
@@ -836,9 +775,6 @@ deploy() {
 	platform=$1
 	mode=$2
 	clean_build_settings
-
-	# Claude monitoring: Signal deploy start
-	claude_monitor_deploy_start "$platform" "$mode"
 
 	platform_folder="${version_folder}/${platform}"
 
@@ -900,14 +836,7 @@ run() {
 			echo "Using debug package name: ${app_package_id}"
 		fi
 		adb shell am start -n ${app_package_id}/com.dynamo.android.DefoldActivity
-		
-		# Claude monitoring: Start log streaming if enabled, otherwise normal logcat
-		claude_monitor_stream_logs "android"
-		if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
-			adb logcat -s defold | tee >( "$claude_monitor_script" process_logs "android" )
-		else
-			adb logcat -s defold
-		fi
+		adb logcat -s defold
 	fi
 
 	if [ ${platform} == ${ios_platform} ]; then
@@ -928,14 +857,7 @@ run() {
 		echo "Launching app on device ${device_id}..."
 
 		echo "Using console mode..."
-		
-		# Claude monitoring: Start log streaming if enabled, otherwise normal console
-		claude_monitor_stream_logs "ios"
-		if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
-			launch_ios_app_with_console "$device_id" "$bundle_id_ios" | tee >( "$claude_monitor_script" process_logs "ios" )
-		else
-			launch_ios_app_with_console "$device_id" "$bundle_id_ios"
-		fi
+		launch_ios_app_with_console "$device_id" "$bundle_id_ios"
 	fi
 
 	if [ ${platform} == ${linux_platform} ]; then
