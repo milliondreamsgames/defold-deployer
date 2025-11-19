@@ -94,7 +94,7 @@ Deployer need to run on root of your Defold project
 
 Filename will be name {ProjectName}\_{Version}\_{BuildMode}.[apk|ipa]
 
-##	Examples
+### Examples
 ```bash
 # Build, deploy and run Android bundle
 deployer.sh abd

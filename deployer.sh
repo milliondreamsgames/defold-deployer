@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ### Author: Insality <insality@gmail.com>, 04.2019
 ## (c) Insality Games
 ##
@@ -47,9 +47,6 @@
 ###
 
 clean() {
-	# Clean up any running spinners first
-	cleanup_spinner
-	
 	clean_build_settings
 
 	if $is_build_started; then
@@ -69,180 +66,16 @@ clean_build_settings() {
 	rm -f ${version_settings_filename}
 }
 
-# Animated spinner functions for delightful build progress
-spin() {
-    local delay=0.15
-    local animated_stars=("✨" "🌟" "⭐" "" "✦" "✧" "★")
-    local fade_chars=("✧" "✦" "☆" "·")
-    local sparkle_chars=("⚡️" "💥" "💫")
-	local event_sparkle_chars=("⚡️" "🧚" "💥" "💫" "🧚‍♀️" "🧚‍♂️" "🧸" "🧞‍♂️" "🧞‍♀️" "🧞" "🪐" "🌎" "🌍")
-    local max_trail_length=999
-    local cycle_count=0
-    local trail_length=1
-    local start_time=$(date +%s)
-    
-    # Enhanced rainbow colors with more variety
-    local colors=(
-        "\033[38;5;196m"  # Bright Red
-        "\033[38;5;208m"  # Orange
-        "\033[38;5;226m"  # Bright Yellow  
-        "\033[38;5;118m"  # Bright Green
-        "\033[38;5;45m"   # Cyan
-        "\033[38;5;33m"   # Sky Blue
-        "\033[38;5;129m"  # Purple
-        "\033[38;5;201m"  # Magenta
-        "\033[38;5;219m"  # Pink
-    )
-    local reset_color="\033[0m"
-    local bold="\033[1m"
-    
-    tput civis  # Hide cursor
-    
-    while true; do
-        # Calculate current trail length - grows more dynamically
-        if (( cycle_count > 0 && cycle_count % 8 == 0 )); then
-            if (( trail_length < max_trail_length )); then
-                ((trail_length++))
-            fi
-        fi
-        
-        # Calculate elapsed time
-        local current_time=$(date +%s)
-        local elapsed=$((current_time - start_time))
-        local elapsed_display="${elapsed}s"
-        
-        # Get animated leading star character with bold styling
-        local star_idx=$((cycle_count % ${#animated_stars[@]}))
-        local leading_color_idx=$((cycle_count % ${#colors[@]}))
-        local leading_star="${bold}${colors[$leading_color_idx]}${animated_stars[$star_idx]}${reset_color}"
-        
-        # Build the magnificent rainbow star trail
-        local display_trail=""
-        for (( i=0; i < trail_length; i++ )); do
-            # Create flowing rainbow effect with offset colors
-            local trail_color_idx=$(( (cycle_count + i * 2) % ${#colors[@]} ))
-            local trail_color="${colors[$trail_color_idx]}"
-            
-            if (( i == 0 )); then
-                # Leading star - most brilliant
-                display_trail="${leading_star}${display_trail}"
-            elif (( i <= 2 )); then
-                # Close trailing stars - bright and sparkly
-                local sparkle_idx=$(( (cycle_count + i) % ${#sparkle_chars[@]} ))
-                display_trail="${trail_color}${sparkle_chars[$sparkle_idx]}${reset_color}${display_trail}"
-            elif (( i <= 6 )); then
-                # Middle trail - fading stars
-                local fade_idx=$(( (i-3) % ${#fade_chars[@]} ))
-                display_trail="${trail_color}${fade_chars[$fade_idx]}${reset_color}${display_trail}"
-            else
-                # Long tail - subtle sparkles and dots
-                local fade_pattern=$(( (cycle_count + i) % 4 ))
-                if (( fade_pattern == 0 )); then
-                    display_trail="${trail_color}·${reset_color}${display_trail}"
-                elif (( fade_pattern == 1 )); then
-                    display_trail="${trail_color}˙${reset_color}${display_trail}"
-                else
-                    display_trail="${trail_color}․${reset_color}${display_trail}"
-                fi
-            fi
-        done
-        
-        # Show the magnificent sparkling trail
-        printf "\r\033[K${display_trail} ${elapsed_display}"
-        sleep $delay
-        ((cycle_count++))
-    done
-}
-
-# Global variable to track spinner PID for cleanup
-SPINNER_PID=""
-
-cleanup_spinner() {
-    if [ -n "$SPINNER_PID" ]; then
-        kill $SPINNER_PID 2>/dev/null
-        wait $SPINNER_PID 2>/dev/null
-        SPINNER_PID=""
-        printf "\r\033[K"  # Clear spinner line
-        tput cnorm  # Show cursor
-    fi
-}
-
-# Enhanced progress display with combined spinner and stats
-show_progress_with_spinner() {
-    local step_description="$1"
-    local show_progress="$2"  # "true" to show progress bar below spinner
-    shift 2
-    
-    # Show step start message with timestamp
-    if [ -n "$step_description" ]; then
-        echo "[$(date +'%H:%M:%S')] $step_description"
-    fi
-    
-    local step_start_time=$(date +%s)
-    
-    if [ "$show_progress" == "true" ]; then
-        # Start spinner in background
-        spin &
-        SPINNER_PID=$!
-        
-        # Show initial progress line (will be updated by progress.js calls)
-        echo ""
-        echo "[████████░░] 0% | Initializing..."
-        
-        # Set up trap for cleanup
-        trap 'cleanup_spinner; exit 130' INT
-        
-        # Run the actual command
-        "$@"
-        local exit_code=$?
-        
-        # Clean up spinner
-        cleanup_spinner
-    else
-        # Simple execution without spinner for quick commands
-        "$@"
-        local exit_code=$?
-    fi
-    
-    # Calculate completion time
-    local step_end_time=$(date +%s)
-    local step_duration=$((step_end_time - step_start_time))
-    
-    # Show completion message
-    if [ $exit_code -eq 0 ]; then
-        if [ -n "$step_description" ]; then
-            echo -e "\n\033[32m[✅ SUCCESS]\033[0m Completed in ${step_duration}s"
-        else
-            echo -e "\033[32m[✅]\033[0m Completed"
-        fi
-    else
-        if [ -n "$step_description" ]; then
-            echo -e "\n\033[31m[❌ FAILED]\033[0m After ${step_duration}s (exit code: $exit_code)"
-        else
-            echo -e "\033[31m[❌]\033[0m Failed (exit code: $exit_code)"
-        fi
-    fi
-    
-    return $exit_code
-}
-
-# Legacy wrapper for backward compatibility
-start_spinner() {
-    show_progress_with_spinner "$@" "false"
-}
-
-
 ### Exit on Cmd+C / Ctrl+C
-# Enhanced trap handling to ensure proper cleanup on interruption
 handle_interrupt() {
 	echo -e "\n\x1B[33m[INTERRUPTED]: Script cancelled by user\x1B[0m"
-	cleanup_spinner
 	exit 130
 }
 
 trap handle_interrupt INT
 trap clean EXIT
-set -e
+# Remove set -e to prevent script exit on build failures
+# We'll handle errors explicitly in the build functions
 
 ### Early argument parsing for special commands that don't require game.project
 ios_device_preference_filename=".ios_device_preference"
@@ -276,6 +109,41 @@ is_build_html_report=false
 enable_incremental_version=false
 enable_incremental_android_version_code=false
 is_steam_upload=false
+
+### Claude Code Monitoring Integration (Phase 2)
+# Environment variable control - monitoring disabled by default to preserve existing workflow
+CLAUDE_MONITORING_ENABLED=${CLAUDE_MONITORING_ENABLED:-false}
+claude_monitor_script="./claude-log-monitor.sh"
+
+# Claude monitoring helper functions
+claude_monitor_build_start() {
+	if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
+		echo "[ENGINE] [FEATURE] Build phase started for $1 $2 mode"
+		"$claude_monitor_script" build_start "$1" "$2" 2>/dev/null || true
+	fi
+}
+
+claude_monitor_build_end() {
+	if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
+		echo "[ENGINE] [FEATURE] Build phase completed for $1 $2 mode (exit code: $3)"
+		"$claude_monitor_script" build_end "$1" "$2" "$3" 2>/dev/null || true
+	fi
+}
+
+claude_monitor_deploy_start() {
+	if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
+		echo "[ENGINE] [FEATURE] Deploy phase started for $1 $2 mode"
+		"$claude_monitor_script" deploy_start "$1" "$2" 2>/dev/null || true
+	fi
+}
+
+claude_monitor_stream_logs() {
+	if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
+		echo "[ENGINE] [FEATURE] Starting log stream for $1"
+		"$claude_monitor_script" stream_logs "$1" 2>/dev/null || true
+	fi
+}
+
 steam_app_id=""
 steam_depot_id=""
 steam_depot_id_windows=""
@@ -286,7 +154,6 @@ steam_vdf_path=""
 ### Settings loading
 settings_filename="settings_deployer"
 script_path="`dirname \"$0\"`"
-progress_script="${script_path}/progress.js"
 is_settings_exist=false
 
 if [ -f ${script_path}/${settings_filename} ]; then
@@ -360,7 +227,7 @@ commits_count=0
 is_git=false
 is_cache_using=false
 
-if [ -d .git ]; then
+if git rev-parse --git-dir >/dev/null 2>&1; then
 	commit_sha=`git rev-parse --verify HEAD`
 	commits_count=`git rev-list --all --count`
 	is_git=true
@@ -372,6 +239,10 @@ is_build_success=false
 is_build_started=false
 build_time=false
 
+# Platform-specific build success tracking
+declare -A platform_build_success
+overall_build_success=true
+
 ### Game project settings for deployer script
 title=$(less game.project | grep "^title = " | cut -d "=" -f2 | sed -e 's/^[[:space:]]*//')
 version=$(less game.project | grep "^version = " | cut -d "=" -f2 | sed -e 's/^[[:space:]]*//')
@@ -379,13 +250,30 @@ version=${version:='0.0.0'}
 title_no_space=$(echo -e "${title}" | tr -cd '[:alnum:]') # removes spaces, hyphens and special characters
 bundle_id_android=$(less game.project | grep "^package = " | cut -d "=" -f2 | sed -e 's/^[[:space:]]*//')
 bundle_id_ios=$(less game.project | grep "^bundle_identifier = " | cut -d "=" -f2 | sed -e 's/^[[:space:]]*//')
+
+### Determine version suffix for folder naming
+# Priority: commits_count (if incremental) > hard_coded_bundle_version_code > bundle_version from game.project
+if $enable_incremental_android_version_code; then
+	version_suffix="$commits_count"
+	echo -e "\x1B[36m[INFO]: Using git commits_count for folder naming: ${version_suffix}\x1B[0m"
+elif [ -n "$hard_coded_bundle_version_code" ]; then
+	version_suffix="$hard_coded_bundle_version_code"
+	echo -e "\x1B[36m[INFO]: Using hard_coded_bundle_version_code for folder naming: ${version_suffix}\x1B[0m"
+else
+	# Extract bundle_version from game.project (iOS uses this field)
+	game_project_bundle_version=$(grep "^bundle_version = " game.project | cut -d "=" -f2 | sed -e 's/^[[:space:]]*//' | head -1)
+	# Fallback to commits_count if not found in game.project
+	version_suffix="${game_project_bundle_version:-$commits_count}"
+	echo -e "\x1B[36m[INFO]: Using bundle_version from game.project for folder naming: ${version_suffix}\x1B[0m"
+fi
+
 ### Override last version number with commits count
 if $enable_incremental_version; then
 	version="${version%.*}.$commits_count"
 fi
 
-file_prefix_name="${title_no_space}_${version}-${commits_count}"
-version_folder="${bundle_folder}/${version}-${commits_count}"
+file_prefix_name="${title_no_space}_${version}-${version_suffix}"
+version_folder="${bundle_folder}/${version}-${version_suffix}"
 echo -e "\nProject: \x1B[36m${title} v${version}\x1B[0m"
 echo -e "Commit SHA: \x1B[35m${commit_sha}\x1B[0m"
 echo -e "Commits amount: \x1B[33m${commits_count}\x1B[0m"
@@ -396,12 +284,12 @@ bob_sha="$(cut -d ":" -f2 <<< "$bob_sha")"
 bob_channel="${bob_channel:-"stable"}"
 
 if $use_latest_bob; then
-	INFO=$(curl -s http://d.defold.com/${bob_channel}/info.json)
-	echo "Using latest bob: ${INFO}"
-	bob_sha=$(sed 's/.*sha1": "\(.*\)".*/\1/' <<< $INFO)
-	bob_version=$(sed 's/[^0-9.]*\([0-9.]*\).*/\1/' <<< $INFO)
-	bob_version="$(cut -d "." -f3 <<< "$bob_version")"
-fi
+        INFO=$(curl -s http://d.defold.com/${bob_channel}/info.json)
+        echo "Using latest bob: ${INFO}"
+        bob_sha=$(sed 's/.*sha1": "\(.*\)".*/\1/' <<< $INFO)
+        bob_version=$(sed 's/[^0-9.]*\([0-9.]*\).*/\1/' <<< $INFO)
+        bob_version="$(cut -d "." -f3 <<< "$bob_version")"
+    fi
 
 echo -e "Using Bob version \x1B[35m${bob_version}\x1B[0m SHA: \x1B[35m${bob_sha}\x1B[0m"
 
@@ -415,7 +303,7 @@ download_bob() {
 		echo "Unable to find bob${bob_version}.jar. Downloading it from d.defold.com: ${BOB_URL}}"
 	# Show progress for downloading Bob with enhanced display
 	echo "[🔽] Downloading Bob build tool..."
-	show_progress_with_spinner "Downloading Bob JAR file" "true" curl -L -o ${bob_path} ${BOB_URL}
+	curl -L -o ${bob_path} ${BOB_URL}
 	echo "[✅] Bob download complete"
 	fi
 }
@@ -460,6 +348,7 @@ write_report() {
 	fi
 
 	if [ ! -f $build_stats_report_file ]; then
+		mkdir -p "$(dirname "$build_stats_report_file")"
 		touch $build_stats_report_file
 		echo -e "Create build report file: $build_stats_report_file"
 
@@ -477,7 +366,7 @@ write_report() {
 resolve_bob() {
 	# Show progress for library resolution with enhanced spinner
 	echo "[📦] Resolving project dependencies..."
-	show_progress_with_spinner "Resolving libraries and dependencies" "true" java -jar ${bob_path} --email foo@bar.com --auth 12345 resolve || try_fix_libraries
+	java -jar ${bob_path} --email foo@bar.com --auth 12345 resolve || try_fix_libraries
 	echo "[✅] Dependencies resolved"
 	echo ""
 }
@@ -509,15 +398,24 @@ bob() {
 		args+=" build bundle distclean"
 	fi
 
-	start_build_time=`date +%s`
+    start_build_time=`date +%s`
 
-	echo -e "Build command: ${args}"
-	echo "[🔨] Building project with Bob..."
-	echo "\n=== BUILD OUTPUT ==="
+    echo -e "Build command: ${args}"
+    echo "[🔨] Building project with Bob..."
+    echo "\n=== BUILD OUTPUT ==="
 
-	# Run the build command directly with live output
-	${args}
-	local build_exit_code=$?
+    # Run the build command with Claude integration if enabled
+    if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
+        echo "[ENGINE] [FEATURE] Enhanced build execution with Claude log streaming"
+        ${args} 2>&1 | \
+            tee >(while IFS= read -r line; do
+                "$claude_monitor_script" process_logs "$platform" <<< "$line" 2>/dev/null || true
+            done)
+        local build_exit_code=${PIPESTATUS[0]}
+    else
+        ${args}
+        local build_exit_code=$?
+    fi
 
 	echo "\n=== END BUILD OUTPUT ==="
 
@@ -525,11 +423,20 @@ bob() {
 		echo "[✅] Build process completed successfully"
 	else
 		echo "[❌] Build process FAILED with exit code: $build_exit_code"
+
+		# Trigger Claude troubleshooting analysis if monitoring is enabled
+		if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
+			echo "[ENGINE] [FEATURE] Triggering automated troubleshooting analysis"
+			"$claude_monitor_script" analyze_error "$build_exit_code" 2>/dev/null || true
+		fi
+
+		# Return the exit code so build() function can handle the failure
 		return $build_exit_code
 	fi
 
 	build_time=$((`date +%s`-start_build_time))
 	echo -e "Build time: $build_time seconds\n"
+	return 0
 }
 
 
@@ -549,6 +456,9 @@ build() {
 	additional_params="${build_params} ${settings_params} $3"
 	is_build_success=false
 	is_build_started=true
+
+	# Claude monitoring: Signal build start
+	claude_monitor_build_start "$platform" "$mode"
 
 	if [ ${mode} == "release" ]; then
 		ident=${ios_identity_dist}
@@ -623,15 +533,31 @@ build() {
 			additional_params="$additional_params --settings $settings_android"
 		fi
 
-		bob ${mode} --platform ${platform} --bundle-format apk,aab --keystore ${android_keystore} \
+		if bob ${mode} --platform ${platform} --bundle-format apk,aab --keystore ${android_keystore} \
 			--keystore-pass ${android_keystore_password} \
-			--build-server ${build_server} ${additional_params}
+			--build-server ${build_server} ${additional_params}; then
+			echo "Bob build completed successfully for Android"
 
-		target_path="${platform_folder}/${filename}.apk"
-		mv "${line}.apk" ${target_path} && is_build_success=true
+			target_path="${platform_folder}/${filename}.apk"
+			if [ -f "${line}.apk" ]; then
+				mv "${line}.apk" ${target_path}
+				echo "Moved APK to: ${target_path}"
+				is_build_success=true
+			else
+				echo "Warning: APK file not found at ${line}.apk"
+			fi
 
-		rm -f "${platform_folder}/${filename}.aab"
-		mv "${line}.aab" "${platform_folder}/${filename}.aab" && is_build_success=true
+			rm -f "${platform_folder}/${filename}.aab"
+			if [ -f "${line}.aab" ]; then
+				mv "${line}.aab" "${platform_folder}/${filename}.aab"
+				echo "Moved AAB to: ${platform_folder}/${filename}.aab"
+			else
+				echo "Warning: AAB file not found at ${line}.aab"
+			fi
+		else
+			echo "Bob build failed for Android"
+			is_build_success=false
+		fi
 		export DEPLOYER_ARTIFACT_PATH="${target_path}"
 
 		#if [ ${mode} == "release" ]; then
@@ -657,50 +583,61 @@ build() {
 			additional_params="$additional_params --settings $settings_ios"
 		fi
 
-		bob ${mode} --platform ${platform} --architectures arm64-ios --identity ${ident} --mobileprovisioning ${prov} \
-			--build-server ${build_server} ${additional_params}
+		if bob ${mode} --platform ${platform} --architectures arm64-ios --identity ${ident} --mobileprovisioning ${prov} \
+			--build-server ${build_server} ${additional_params}; then
+			echo "Bob build completed successfully for iOS"
 
-		# Debug: Show what files were actually created
-		echo "Checking for build artifacts in ${dist_folder}..."
-		ls -la "${dist_folder}" || echo "dist folder not found"
-		echo "Looking for iOS artifacts with pattern: ${line}.*"
-		find "${dist_folder}" -name "${title}*" -type f 2>/dev/null || echo "No iOS artifacts found matching ${title}"
+			# Debug: Show what files were actually created
+			echo "Checking for build artifacts in ${dist_folder}..."
+			ls -la "${dist_folder}" || echo "dist folder not found"
+			echo "Looking for iOS artifacts with pattern: ${line}.*"
+			find "${dist_folder}" -name "${title}*" -type f 2/dev/null || echo "No iOS artifacts found matching ${title}"
 
-		target_path="${platform_folder}/${filename}.ipa"
-		rm -rf ${target_path}
-		
-		# Try to find and move the .ipa file
-		if [ -f "${line}.ipa" ]; then
-			echo "Found .ipa file: ${line}.ipa"
-			mv "${line}.ipa" ${target_path} && is_build_success=true
-		else
-			echo "Expected .ipa file not found at: ${line}.ipa"
-			# Try to find any .ipa file in the dist folder
-			ipa_file=$(find "${dist_folder}" -name "*.ipa" -type f | head -1)
-			if [ -n "$ipa_file" ]; then
-				echo "Found alternative .ipa file: $ipa_file"
-				mv "$ipa_file" ${target_path} && is_build_success=true
+			target_path="${platform_folder}/${filename}.ipa"
+			rm -rf ${target_path}
+
+			# Try to find and move the .ipa file
+			if [ -f "${line}.ipa" ]; then
+				echo "Found .ipa file: ${line}.ipa"
+				mv "${line}.ipa" ${target_path}
+				echo "Moved IPA to: ${target_path}"
+				is_build_success=true
 			else
-				echo "No .ipa file found in ${dist_folder}"
+				echo "Expected .ipa file not found at: ${line}.ipa"
+				# Try to find any .ipa file in the dist folder
+				ipa_file=$(find "${dist_folder}" -name "*.ipa" -type f | head -1)
+				if [ -n "$ipa_file" ]; then
+					echo "Found alternative .ipa file: $ipa_file"
+					mv "$ipa_file" ${target_path}
+					echo "Moved alternative IPA to: ${target_path}"
+					is_build_success=true
+				else
+					echo "No .ipa file found in ${dist_folder}"
+				fi
 			fi
-		fi
 
-		rm -rf "${platform_folder}/${filename}.app"
-		
-		# Try to find and move the .app file
-		if [ -d "${line}.app" ]; then
-			echo "Found .app bundle: ${line}.app"
-			mv "${line}.app" "${platform_folder}/${filename}.app"
-		else
-			echo "Expected .app bundle not found at: ${line}.app"
-			# Try to find any .app bundle in the dist folder
-			app_bundle=$(find "${dist_folder}" -name "*.app" -type d | head -1)
-			if [ -n "$app_bundle" ]; then
-				echo "Found alternative .app bundle: $app_bundle"
-				mv "$app_bundle" "${platform_folder}/${filename}.app"
+			rm -rf "${platform_folder}/${filename}.app"
+
+			# Try to find and move the .app file
+			if [ -d "${line}.app" ]; then
+				echo "Found .app bundle: ${line}.app"
+				mv "${line}.app" "${platform_folder}/${filename}.app"
+				echo "Moved APP to: ${platform_folder}/${filename}.app"
 			else
-				echo "No .app bundle found in ${dist_folder}"
+				echo "Expected .app bundle not found at: ${line}.app"
+				# Try to find any .app bundle in the dist folder
+				app_bundle=$(find "${dist_folder}" -name "*.app" -type d | head -1)
+				if [ -n "$app_bundle" ]; then
+					echo "Found alternative .app bundle: $app_bundle"
+					mv "$app_bundle" "${platform_folder}/${filename}.app"
+					echo "Moved alternative APP to: ${platform_folder}/${filename}.app"
+				else
+					echo "No .app bundle found in ${dist_folder}"
+				fi
 			fi
+		else
+			echo "Bob build failed for iOS"
+			is_build_success=false
 		fi
 
 		export DEPLOYER_ARTIFACT_PATH="${target_path}"
@@ -726,7 +663,7 @@ build() {
 		echo "Start build HTML5 ${mode}"
 		bob ${mode} --platform ${platform} --architectures js-web ${additional_params}
 
-		target_path="${platform_folder}/${filename}_html.zip"
+target_path="${platform_folder}/html_${filename}.zip"
 
 		rm -rf "${platform_folder}/${filename}_html"
 		rm -f "${target_path}"
@@ -734,7 +671,7 @@ build() {
 
 		previous_folder=`pwd`
 		cd "${platform_folder}"
-		zip "${filename}_html.zip" -r "${filename}_html" && is_build_success=true
+	zip "html_${filename}.zip" -r "${filename}_html" && is_build_success=true
 		cd "${previous_folder}"
 
 		export DEPLOYER_ARTIFACT_PATH="${target_path}"
@@ -850,6 +787,8 @@ build() {
 
 	if $is_build_success; then
 		echo -e "\x1B[32mSave bundle at ${version_folder}/${filename}\x1B[0m"
+		# Track per-platform build success
+		platform_build_success["${platform}"]="true"
 		if [ -f ./${post_build_script} ]; then
 			echo "Run post-build script: $post_build_script"
 			source ./$post_build_script
@@ -863,8 +802,17 @@ build() {
 		fi
 
 		write_report ${platform} ${mode} ${target_path}
+		
+		# Claude monitoring: Signal successful build completion
+		claude_monitor_build_end "$platform" "$mode" "0"
 	else
 		echo -e "\x1B[31mError during building...\x1B[0m"
+		# Track per-platform build failure
+		platform_build_success["${platform}"]="false"
+		overall_build_success=false
+		
+		# Claude monitoring: Signal failed build completion
+		claude_monitor_build_end "$platform" "$mode" "1"
 	fi
 }
 
@@ -888,6 +836,9 @@ deploy() {
 	platform=$1
 	mode=$2
 	clean_build_settings
+
+	# Claude monitoring: Signal deploy start
+	claude_monitor_deploy_start "$platform" "$mode"
 
 	platform_folder="${version_folder}/${platform}"
 
@@ -915,19 +866,13 @@ deploy() {
 		echo "Installing app to device ${device_id}..."
 		echo "Install command: xcrun devicectl device install app --device ${device_id} \"${filename}\""
 		xcrun devicectl device install app --device ${device_id} "${filename}"
-
-		if [ $? -ne 0 ]; then
-			echo -e "\x1B[33m[WARNING]: devicectl install failed, trying ios-deploy as fallback...\x1B[0m"
-			echo "Fallback command: ios-deploy -W --bundle ${filename} --bundle_id ${bundle_id_ios}"
-			ios-deploy -W --bundle "${filename}" --bundle_id "${bundle_id_ios}"
-		fi
 	fi
 
 	if [ ${platform} == ${html_platform} ]; then
 		filename="${platform_folder}/${file_prefix_name}_${mode}_html/"
-		echo "Start python server and open in browser ${filename:1}"
+		echo "Start python server ${filename:1}"
+		echo "[📝] Web server starting at: http://localhost:8000${filename:1}"
 
-		open "http://localhost:8000${filename:1}"
 		python3 --version
 		python3 -m "http.server"
 	fi
@@ -955,7 +900,14 @@ run() {
 			echo "Using debug package name: ${app_package_id}"
 		fi
 		adb shell am start -n ${app_package_id}/com.dynamo.android.DefoldActivity
-		adb logcat -s defold
+		
+		# Claude monitoring: Start log streaming if enabled, otherwise normal logcat
+		claude_monitor_stream_logs "android"
+		if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
+			adb logcat -s defold | tee >( "$claude_monitor_script" process_logs "android" )
+		else
+			adb logcat -s defold
+		fi
 	fi
 
 	if [ ${platform} == ${ios_platform} ]; then
@@ -976,13 +928,13 @@ run() {
 		echo "Launching app on device ${device_id}..."
 
 		echo "Using console mode..."
-		launch_ios_app_with_console "$device_id" "$bundle_id_ios"
-		launch_status=$?
-
-		if [ $launch_status -ne 0 ]; then
-			echo -e "\x1B[33m[WARNING]: devicectl console launch failed, trying ios-deploy as fallback...\x1B[0m"
-			echo "Fallback command: ios-deploy -I -m -b ${filename_app}"
-			ios-deploy -I -m -b ${filename_app}
+		
+		# Claude monitoring: Start log streaming if enabled, otherwise normal console
+		claude_monitor_stream_logs "ios"
+		if [ "$CLAUDE_MONITORING_ENABLED" = "true" ] && [ -f "$claude_monitor_script" ]; then
+			launch_ios_app_with_console "$device_id" "$bundle_id_ios" | tee >( "$claude_monitor_script" process_logs "ios" )
+		else
+			launch_ios_app_with_console "$device_id" "$bundle_id_ios"
 		fi
 	fi
 
@@ -1238,7 +1190,7 @@ zip_release_build() {
 
     if [ ${platform} == ${macos_platform} ]; then
         # For Mac, zip the .app file
-        local zip_filename="${platform_folder}/${file_prefix_name}_${mode}_macos.zip"
+local zip_filename="${platform_folder}/macos_${file_prefix_name}_${mode}.zip"
         echo "Creating zip archive for macOS: ${zip_filename}"
 
         # Navigate to the directory containing the .app file
@@ -1249,7 +1201,7 @@ zip_release_build() {
         local app_name=$(basename "${target_path}")
 
         # Zip the .app file
-        zip -r "${file_prefix_name}_${mode}_macos.zip" "${app_name}" -x "*.DS_Store" -x "*/.*"
+        zip -r "macos_${file_prefix_name}_${mode}.zip" "${app_name}" -x "*.DS_Store" -x "*/.*"
 
         # Return to original directory
         cd "${current_dir}"
@@ -1259,7 +1211,7 @@ zip_release_build() {
 
     if [ ${platform} == ${windows_platform} ]; then
         # For Windows, zip all the contents inside the build folder
-        local zip_filename="${target_path}/${file_prefix_name}_${mode}_windows.zip"
+local zip_filename="${target_path}/windows_${file_prefix_name}_${mode}.zip"
         echo "Creating zip archive for Windows: ${zip_filename}"
 
         # Navigate to inside the Windows build folder
@@ -1267,7 +1219,7 @@ zip_release_build() {
         cd "${target_path}"
 
         # Zip all contents of the current directory
-        zip -r "${file_prefix_name}_${mode}_windows.zip" ./* -x "*.zip"
+        zip -r "windows_${file_prefix_name}_${mode}.zip" ./* -x "*.zip"
 
         # Return to original directory
         cd "${current_dir}"
@@ -1503,6 +1455,20 @@ do
 	esac
 done
 
+### Validate hard_coded_bundle_version_code setting
+if [ -n "$hard_coded_bundle_version_code" ]; then
+	# Check if it's a positive integer
+	if ! [[ "$hard_coded_bundle_version_code" =~ ^[0-9]+$ ]]; then
+		echo -e "\x1B[31m[ERROR]: hard_coded_bundle_version_code must be a positive integer, got: '${hard_coded_bundle_version_code}'\x1B[0m"
+		exit 1
+	fi
+
+	# Warn if both incremental mode and hard-coded value are set
+	if $enable_incremental_android_version_code; then
+		echo -e "\x1B[33m[WARNING]: Both enable_incremental_android_version_code and hard_coded_bundle_version_code are set.\x1B[0m"
+		echo -e "\x1B[33m[WARNING]: Incremental mode takes precedence - hard_coded_bundle_version_code will be ignored.\x1B[0m"
+	fi
+fi
 
 ### Create deployer additional info project settings
 echo "[project]
@@ -1510,18 +1476,29 @@ version = ${version}
 commit_sha = ${commit_sha}
 build_date = ${build_date}" > ${version_settings_filename}
 
+echo -e "\x1B[36m[DEBUG]: enable_incremental_android_version_code = '${enable_incremental_android_version_code}'\x1B[0m"
 if $enable_incremental_android_version_code; then
+	echo -e "\x1B[33m[DEBUG]: Writing version_code override (commits_count = ${commits_count})\x1B[0m"
 	echo "
 [ios]
 bundle_version = ${commits_count}" >> ${version_settings_filename}
 	echo "
 [android]
 version_code = ${commits_count}" >> ${version_settings_filename}
+elif [ -n "$hard_coded_bundle_version_code" ]; then
+	echo -e "\x1B[33m[DEBUG]: Writing hard-coded version_code override (hard_coded_bundle_version_code = ${hard_coded_bundle_version_code})\x1B[0m"
+	echo "
+[android]
+version_code = ${hard_coded_bundle_version_code}" >> ${version_settings_filename}
+else
+	echo -e "\x1B[32m[DEBUG]: Skipping version_code override - will use game.project values\x1B[0m"
 fi
 
 settings_params="${settings_params} --settings ${version_settings_filename}"
 add_to_gitignore $version_settings_filename
 
+
+echo "[🚀] Starting deployer script..."
 
 ### Deployer run
 if $is_steam_upload && [ "${mode}" != "release" ]; then
@@ -1529,96 +1506,133 @@ if $is_steam_upload && [ "${mode}" != "release" ]; then
     echo -e "\x1B[33mAdd 'r' to your command to enable release mode\x1B[0m"
 fi
 
-if $is_ios; then
-	if $is_build; then
+# Step 1: Build all requested platforms first
+echo -e "\n=== BUILD PHASE ==="
+
+# For debug builds, create a temporary settings file to add .debug suffix to package name
+if $is_android && [ "$mode" == "debug" ]; then
+	echo -e "\nAdding .debug suffix to Android package name for debug build"
+	# Create a temporary settings file to override the package name
+	echo "[android]
+package = ${bundle_id_android}.debug" > "settings_android_debug_temp.ini"
+	settings_params="${settings_params} --settings settings_android_debug_temp.ini"
+	# This file will be cleaned up when the script exits
+fi
+
+if $is_build; then
+	if $is_ios; then
 		echo -e "\nStart build on \x1B[36m${ios_platform}\x1B[0m"
 		build ${ios_platform} ${mode}
 	fi
 
-	if $is_deploy; then
-		echo "Start deploy project to device"
-		deploy ${ios_platform} ${mode}
-		echo "Waiting 3 seconds for device to settle after installation..."
-		sleep 3
-		run ${ios_platform} ${mode}
-	fi
-fi
-
-if $is_android; then
-	# For debug builds, create a temporary settings file to add .debug suffix to package name
-	if [ "$mode" == "debug" ]; then
-		echo -e "\nAdding .debug suffix to Android package name for debug build"
-		# Create a temporary settings file to override the package name
-		echo "[android]
-package = ${bundle_id_android}.debug" > "settings_android_debug_temp.ini"
-		settings_params="${settings_params} --settings settings_android_debug_temp.ini"
-		# This file will be cleaned up when the script exits
-	fi
-
-	if ! $is_android_instant; then
-		# Just build usual Android build
-		if $is_build; then
+	if $is_android; then
+		if ! $is_android_instant; then
+			# Just build usual Android build
 			echo -e "\nStart build on \x1B[34m${android_platform}\x1B[0m"
 			build ${android_platform} ${mode}
-		fi
-
-		if $is_deploy; then
-			echo "Start deploy project to device"
-			deploy ${android_platform} ${mode}
-			run ${android_platform} ${mode}
-		fi
-	else
-		# Build Android Instant APK
-		echo -e "\nStart build on \x1B[34m${android_platform} Instant APK\x1B[0m"
-		build ${android_platform} ${mode} "--settings ${android_instant_app_settings}"
-		make_instant ${mode}
-
-		if $is_deploy; then
-			echo "No autodeploy for Instant APK builds..."
+		else
+			# Build Android Instant APK
+			echo -e "\nStart build on \x1B[34m${android_platform} Instant APK\x1B[0m"
+			build ${android_platform} ${mode} "--settings ${android_instant_app_settings}"
+			make_instant ${mode}
 		fi
 	fi
-fi
 
-if $is_html; then
-	if $is_build; then
+	if $is_html; then
 		echo -e "\nStart build on \x1B[33m${html_platform}\x1B[0m"
 		build ${html_platform} ${mode}
 	fi
 
-	if $is_deploy; then
-		deploy ${html_platform} ${mode}
-	fi
-fi
-
-if $is_linux; then
-	if $is_build; then
+	if $is_linux; then
 		echo -e "\nStart build on \x1B[33m${linux_platform}\x1B[0m"
 		build ${linux_platform} ${mode}
 	fi
 
-	if $is_deploy; then
-		run ${linux_platform} ${mode}
-	fi
-fi
-
-if $is_macos; then
-	if $is_build; then
+	if $is_macos; then
 		echo -e "\nStart build on \x1B[33m${macos_platform}\x1B[0m"
 		build ${macos_platform} ${mode}
 	fi
 
-	if $is_deploy; then
-		run ${macos_platform} ${mode}
-	fi
-fi
-
-if $is_windows; then
-	if $is_build; then
+	if $is_windows; then
 		echo -e "\nStart build on \x1B[33m${windows_platform}\x1B[0m"
 		build ${windows_platform} ${mode}
 	fi
 
-	if $is_deploy; then
-		run ${windows_platform} ${mode}
+	# Show build summary
+	echo -e "\n=== BUILD SUMMARY ==="
+	if $overall_build_success; then
+		echo -e "\x1B[32m✅ All builds completed successfully!\x1B[0m"
+	else
+		echo -e "\x1B[31m❌ Some builds failed:\x1B[0m"
+		for platform in "${!platform_build_success[@]}"; do
+			if [ "${platform_build_success[$platform]}" == "false" ]; then
+				echo -e "\x1B[31m  - $platform: FAILED\x1B[0m"
+			else
+				echo -e "\x1B[32m  - $platform: SUCCESS\x1B[0m"
+			fi
+		done
+	fi
+fi
+
+# Step 2: Deploy/run only for successfully built platforms
+if $is_deploy; then
+	echo -e "\n=== DEPLOY PHASE ==="
+	
+	if $is_ios; then
+		if [ "${platform_build_success[${ios_platform}]}" == "true" ] || ! $is_build; then
+			echo "Start deploy iOS to device"
+			deploy ${ios_platform} ${mode}
+			echo "Waiting 3 seconds for device to settle after installation..."
+			sleep 3
+			run ${ios_platform} ${mode}
+		else
+			echo -e "\x1B[33m[SKIP]: iOS deployment skipped due to build failure\x1B[0m"
+		fi
+	fi
+
+	if $is_android; then
+		if [ "${platform_build_success[${android_platform}]}" == "true" ] || ! $is_build; then
+			if ! $is_android_instant; then
+				echo "Start deploy Android to device"
+				deploy ${android_platform} ${mode}
+				run ${android_platform} ${mode}
+			else
+				echo "No autodeploy for Instant APK builds..."
+			fi
+		else
+			echo -e "\x1B[33m[SKIP]: Android deployment skipped due to build failure\x1B[0m"
+		fi
+	fi
+
+	if $is_html; then
+		if [ "${platform_build_success[${html_platform}]}" == "true" ] || ! $is_build; then
+			deploy ${html_platform} ${mode}
+		else
+			echo -e "\x1B[33m[SKIP]: HTML5 deployment skipped due to build failure\x1B[0m"
+		fi
+	fi
+
+	if $is_linux; then
+		if [ "${platform_build_success[${linux_platform}]}" == "true" ] || ! $is_build; then
+			run ${linux_platform} ${mode}
+		else
+			echo -e "\x1B[33m[SKIP]: Linux run skipped due to build failure\x1B[0m"
+		fi
+	fi
+
+	if $is_macos; then
+		if [ "${platform_build_success[${macos_platform}]}" == "true" ] || ! $is_build; then
+			run ${macos_platform} ${mode}
+		else
+			echo -e "\x1B[33m[SKIP]: MacOS run skipped due to build failure\x1B[0m"
+		fi
+	fi
+
+	if $is_windows; then
+		if [ "${platform_build_success[${windows_platform}]}" == "true" ] || ! $is_build; then
+			run ${windows_platform} ${mode}
+		else
+			echo -e "\x1B[33m[SKIP]: Windows run skipped due to build failure\x1B[0m"
+		fi
 	fi
 fi
