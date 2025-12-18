@@ -186,7 +186,17 @@ version_settings_filename="deployer_version_settings.txt"
 ios_device_preference_filename=".ios_device_preference"
 selected_ios_device_id=""  # Global variable to store selected device ID for reuse
 build_output_folder="./build/default_deployer"
-dist_folder="./dist"
+
+# Use bob_folder as the base directory for dist, or ./dist if bob_folder is not set
+if [ -n "${bob_folder}" ]; then
+	# Remove trailing slash from bob_folder if present
+	bob_base="${bob_folder%/}"
+	dist_folder="${bob_base}/dist"
+	echo -e "\x1B[36m[INFO]: Using dist folder based on bob_folder: ${dist_folder}\x1B[0m"
+else
+	dist_folder="./dist"
+fi
+
 bundle_folder="${dist_folder}/bundle"
 commit_sha="unknown"
 commits_count=0
@@ -259,7 +269,7 @@ if $use_latest_bob; then
 
 echo -e "Using Bob version \x1B[35m${bob_version}\x1B[0m SHA: \x1B[35m${bob_sha}\x1B[0m"
 
-bob_path="${bob_folder}bob${bob_version}.jar"
+bob_path="${bob_folder}/bob${bob_version}.jar"
 download_bob() {
 	if [ ! -f ${bob_path} ]; then
 		# Create the bob folder if it doesn't exist
@@ -1409,6 +1419,9 @@ bundle_version = ${commits_count}" >> ${version_settings_filename}
 version_code = ${commits_count}" >> ${version_settings_filename}
 elif [ -n "$hard_coded_bundle_version_code" ]; then
 	echo -e "\x1B[33m[DEBUG]: Writing hard-coded version_code override (hard_coded_bundle_version_code = ${hard_coded_bundle_version_code})\x1B[0m"
+	echo "
+[ios]
+bundle_version = ${hard_coded_bundle_version_code}" >> ${version_settings_filename}
 	echo "
 [android]
 version_code = ${hard_coded_bundle_version_code}" >> ${version_settings_filename}
