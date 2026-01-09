@@ -32,6 +32,7 @@
 ## 	--instant - it preparing bundle for Android Instant Apps. Always in release mode
 ##  --steam - upload release builds to Steam using SteamCMD (only works with release mode)
 ##  --reset-ios-device - reset the saved iOS device preference
+##  --texture-compression {true|false} - override texture compression setting (default: true for debug/release, false for headless)
 ##
 ## 	Example:
 ## 	./deployer.sh abd - build, deploy and run Android bundle
@@ -109,6 +110,7 @@ is_build_html_report=false
 enable_incremental_version=false
 enable_incremental_android_version_code=false
 is_steam_upload=false
+texture_compression_override=""
 
 steam_app_id=""
 steam_depot_id=""
@@ -359,19 +361,29 @@ bob() {
 		args+=" --strip-executable"
 	fi
 
+	# Determine texture compression setting
+	local use_texture_compression=""
+	if [ -n "$texture_compression_override" ]; then
+		use_texture_compression="$texture_compression_override"
+	elif [ ${mode} == "debug" ] || [ ${mode} == "release" ]; then
+		use_texture_compression="true"
+	else
+		use_texture_compression="false"
+	fi
+
 	if [ ${mode} == "debug" ]; then
-		echo -e "\nBuild without distclean. Compression enabled, Debug mode"
-		args+=" --texture-compression true build bundle"
+		echo -e "\nBuild without distclean. Compression: ${use_texture_compression}, Debug mode"
+		args+=" --texture-compression ${use_texture_compression} build bundle"
 	fi
 
 	if [ ${mode} == "release" ]; then
-		echo -e "\nBuild with distclean and compression. Release mode"
-		args+=" --texture-compression true build bundle distclean"
+		echo -e "\nBuild with distclean. Compression: ${use_texture_compression}, Release mode"
+		args+=" --texture-compression ${use_texture_compression} build bundle distclean"
 	fi
 
 	if [ ${mode} == "headless" ]; then
-		echo -e "\nBuild with distclean and without compression. Headless mode"
-		args+=" build bundle distclean"
+		echo -e "\nBuild with distclean. Compression: ${use_texture_compression}, Headless mode"
+		args+=" --texture-compression ${use_texture_compression} build bundle distclean"
 	fi
 
     start_build_time=`date +%s`
@@ -1375,6 +1387,11 @@ do
 		;;
 		--steam)
 			is_steam_upload=true
+			shift
+		;;
+		--texture-compression)
+			texture_compression_override="$2"
+			shift
 			shift
 		;;
 		--reset-ios-device)
