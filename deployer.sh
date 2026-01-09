@@ -550,7 +550,16 @@ build() {
 			additional_params="$additional_params --settings $settings_ios"
 		fi
 
-		if bob ${mode} --platform ${platform} --architectures arm64-ios --identity ${ident} --mobileprovisioning ${prov} \
+		# Add iOS signing params only if set
+		ios_signing_params=""
+		if [ ! -z "$ident" ]; then
+			ios_signing_params="--identity ${ident}"
+		fi
+		if [ ! -z "$prov" ]; then
+			ios_signing_params="${ios_signing_params} --mobileprovisioning ${prov}"
+		fi
+
+		if bob ${mode} --platform ${platform} --architectures arm64-ios ${ios_signing_params} \
 			--build-server ${build_server} ${additional_params}; then
 			echo "Bob build completed successfully for iOS"
 
