@@ -32,6 +32,7 @@
 ## 	--instant - it preparing bundle for Android Instant Apps. Always in release mode
 ##  --steam - upload release builds to Steam using SteamCMD (only works with release mode)
 ##  --reset-ios-device - reset the saved iOS device preference
+##  --texture-compression {true|false} - override texture compression setting (default: true for debug/release, false for headless)
 ##
 ## 	Example:
 ## 	./deployer.sh abd - build, deploy and run Android bundle
@@ -109,6 +110,7 @@ is_build_html_report=false
 enable_incremental_version=false
 enable_incremental_android_version_code=false
 is_steam_upload=false
+texture_compression_override=""
 
 steam_app_id=""
 steam_depot_id=""
@@ -359,19 +361,42 @@ bob() {
 		args+=" --strip-executable"
 	fi
 
+	# Determine texture compression setting
+	local use_texture_compression=""
+	if [ -n "$texture_compression_override" ]; then
+		use_texture_compression="$texture_compression_override"
+	elif [ ${mode} == "debug" ] || [ ${mode} == "release" ]; then
+		use_texture_compression="true"
+	fi
+
 	if [ ${mode} == "debug" ]; then
-		echo -e "\nBuild without distclean. Compression enabled, Debug mode"
-		args+=" --texture-compression true build bundle"
+		if [ "$use_texture_compression" == "true" ]; then
+			echo -e "\nBuild without distclean. Compression enabled, Debug mode"
+			args+=" --texture-compression true build bundle"
+		else
+			echo -e "\nBuild without distclean. Compression disabled, Debug mode"
+			args+=" build bundle"
+		fi
 	fi
 
 	if [ ${mode} == "release" ]; then
-		echo -e "\nBuild with distclean and compression. Release mode"
-		args+=" --texture-compression true build bundle distclean"
+		if [ "$use_texture_compression" == "true" ]; then
+			echo -e "\nBuild with distclean and compression. Release mode"
+			args+=" --texture-compression true build bundle distclean"
+		else
+			echo -e "\nBuild with distclean. Compression disabled, Release mode"
+			args+=" build bundle distclean"
+		fi
 	fi
 
 	if [ ${mode} == "headless" ]; then
-		echo -e "\nBuild with distclean and without compression. Headless mode"
-		args+=" build bundle distclean"
+		if [ "$use_texture_compression" == "true" ]; then
+			echo -e "\nBuild with distclean and compression. Headless mode"
+			args+=" --texture-compression true build bundle distclean"
+		else
+			echo -e "\nBuild with distclean and without compression. Headless mode"
+			args+=" build bundle distclean"
+		fi
 	fi
 
     start_build_time=`date +%s`
@@ -1375,6 +1400,11 @@ do
 		;;
 		--steam)
 			is_steam_upload=true
+			shift
+		;;
+		--texture-compression)
+			texture_compression_override="$2"
+			shift
 			shift
 		;;
 		--reset-ios-device)
