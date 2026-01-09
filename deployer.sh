@@ -367,36 +367,23 @@ bob() {
 		use_texture_compression="$texture_compression_override"
 	elif [ ${mode} == "debug" ] || [ ${mode} == "release" ]; then
 		use_texture_compression="true"
+	else
+		use_texture_compression="false"
 	fi
 
 	if [ ${mode} == "debug" ]; then
-		if [ "$use_texture_compression" == "true" ]; then
-			echo -e "\nBuild without distclean. Compression enabled, Debug mode"
-			args+=" --texture-compression true build bundle"
-		else
-			echo -e "\nBuild without distclean. Compression disabled, Debug mode"
-			args+=" build bundle"
-		fi
+		echo -e "\nBuild without distclean. Compression: ${use_texture_compression}, Debug mode"
+		args+=" --texture-compression ${use_texture_compression} build bundle"
 	fi
 
 	if [ ${mode} == "release" ]; then
-		if [ "$use_texture_compression" == "true" ]; then
-			echo -e "\nBuild with distclean and compression. Release mode"
-			args+=" --texture-compression true build bundle distclean"
-		else
-			echo -e "\nBuild with distclean. Compression disabled, Release mode"
-			args+=" build bundle distclean"
-		fi
+		echo -e "\nBuild with distclean. Compression: ${use_texture_compression}, Release mode"
+		args+=" --texture-compression ${use_texture_compression} build bundle distclean"
 	fi
 
 	if [ ${mode} == "headless" ]; then
-		if [ "$use_texture_compression" == "true" ]; then
-			echo -e "\nBuild with distclean and compression. Headless mode"
-			args+=" --texture-compression true build bundle distclean"
-		else
-			echo -e "\nBuild with distclean and without compression. Headless mode"
-			args+=" build bundle distclean"
-		fi
+		echo -e "\nBuild with distclean. Compression: ${use_texture_compression}, Headless mode"
+		args+=" --texture-compression ${use_texture_compression} build bundle distclean"
 	fi
 
     start_build_time=`date +%s`
