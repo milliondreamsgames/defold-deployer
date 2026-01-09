@@ -417,7 +417,10 @@ build() {
 	fi
 
 	#clean first
-	rm -f -r ./.deployer_cache ./build
+	if [ "$skip_cache_cleanup" != "true" ]; then
+		rm -f -r ./.deployer_cache
+	fi
+	rm -f -r ./build
 
 	mkdir -p ${version_folder}
 

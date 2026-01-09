@@ -67,6 +67,9 @@ hard_coded_bundle_version_code=""
 # Local resource cache folder for deployer script. This folder will be added to gitignore if exists
 resource_cache_local=".deployer_cache"
 
+# Skip cleanup of .deployer_cache for CI environments where cache is managed externally
+skip_cache_cleanup=false
+
 # If true, add `-l yes` build param for publish live content
 is_live_content=false
 
